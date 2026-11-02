@@ -1,0 +1,46 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: imp
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: imp_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U imp -d imp_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      storage:
+        image: rustfs/rustfs:1.0.1
+        env:
+          RUSTFS_VOLUMES: /data
+          RUSTFS_ADDRESS: 0.0.0.0:9000
+          RUSTFS_CONSOLE_ENABLE: "false"
+          RUSTFS_ACCESS_KEY: imp_local
+          RUSTFS_SECRET_KEY: imp_local_storage_password
+        ports: [9000:9000]
+    env:
+      DATABASE_URL: postgresql://imp:test_password@localhost:5432/imp_test?schema=public
+      APP_ORIGIN: http://localhost:5173
+      S3_ENDPOINT: http://localhost:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: imp-files
+      S3_ACCESS_KEY: imp_local
+      S3_SECRET_KEY: imp_local_storage_password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test
+      - run: npm run db:migrate
+      - run: npm run storage:init
+      - run: TEST_STORAGE=true npm run test:integration

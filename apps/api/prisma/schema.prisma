@@ -1,0 +1,264 @@
+generator client {
+ provider = "prisma-client-js"
+}
+datasource db {
+ provider = "postgresql"
+ url = env("DATABASE_URL")
+}
+enum Role {
+ admin
+ operator
+ reviewer
+ viewer
+}
+model Organization {
+ id String @id @default(cuid())
+ name String
+ createdAt DateTime @default(now())
+ users User[]
+ stores Store[]
+ accounts Account[]
+ assets Asset[]
+ templates Template[]
+ works Work[]
+ resources HelpResource[]
+ audits AuditLog[]
+ roles AccessRole[]
+ materials Material[]
+ categories MaterialCategory[]
+}
+model Store {
+ id String @id @default(cuid())
+ name String
+ organizationId String
+ organization Organization @relation(fields:[organizationId], references:[id])
+ accounts Account[]
+ createdAt DateTime @default(now())
+ @@unique([organizationId,name])
+}
+model User {
+ id String @id @default(cuid())
+ username String @unique
+ lastLoginAt DateTime?
+ assignments UserRole[]
+ phone String @unique
+ name String
+ passwordHash String
+ role Role @default(viewer)
+ active Boolean @default(true)
+ organizationId String
+ organization Organization @relation(fields:[organizationId], references:[id])
+ createdAt DateTime @default(now())
+ sessions Session[]
+ @@index([organizationId])
+}
+model Session {
+ id String @id
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ expiresAt DateTime
+ createdAt DateTime @default(now())
+ oauthStates OAuthState[]
+ @@index([expiresAt])
+}
+model Account {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ storeId String?
+ store Store? @relation(fields:[storeId],references:[id],onDelete:SetNull)
+ platform String
+ nickname String
+ accountId String
+ tier String
+ status String @default("warning")
+ bindTime DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ avatar String?
+ authorization AccountAuthorization?
+ @@unique([organizationId,platform,accountId])
+}
+model Asset {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ type String
+ name String
+ tags String[] @default([])
+ retained Boolean @default(false)
+ objectKey String @unique
+ mimeType String
+ size Int
+ createdAt DateTime @default(now())
+ materialFiles MaterialFile[]
+ materialVoices Material[] @relation("MaterialVoice")
+ templateCovers Template[]
+ works Work[]
+ @@index([organizationId,type])
+}
+model Template {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ title String
+ description String
+ category String
+ tags String[] @default([])
+ config Json @default("{}")
+ coverAssetId String?
+ coverAsset Asset? @relation(fields:[coverAssetId],references:[id],onDelete:Restrict)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ works Work[]
+ @@index([organizationId,category])
+}
+enum WorkStatus {
+ draft
+ review
+ approved
+ rejected
+}
+model Work {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ title String
+ materialSnapshot Json?
+ status WorkStatus @default(draft)
+ assetId String
+ asset Asset @relation(fields:[assetId],references:[id],onDelete:Restrict)
+ templateId String?
+ template Template? @relation(fields:[templateId],references:[id],onDelete:Restrict)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([organizationId,status])
+}
+model HelpResource {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ title String
+ type String
+ description String?
+ url String?
+ createdAt DateTime @default(now())
+ @@index([organizationId])
+}
+model AuditLog {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ actorId String
+ action String
+ entityId String
+ createdAt DateTime @default(now())
+ @@index([organizationId,createdAt])
+}
+
+model OAuthState {
+ id String @id
+ sessionId String
+ session Session @relation(fields:[sessionId],references:[id],onDelete:Cascade)
+ organizationId String
+ actorId String
+ tier String
+ storeId String?
+ targetAccountId String?
+ mode String
+ clientKey String
+ redirectUri String
+ expiresAt DateTime
+ createdAt DateTime @default(now())
+ @@index([expiresAt])
+}
+model AccountAuthorization {
+ accountId String @id
+ account Account @relation(fields:[accountId],references:[id],onDelete:Cascade)
+ mode String
+ clientKey String
+ openId String
+ scopes String[] @default([])
+ accessTokenCiphertext String?
+ refreshTokenCiphertext String?
+ accessExpiresAt DateTime
+ refreshExpiresAt DateTime
+ lastVerifiedAt DateTime
+ refreshLockUntil DateTime?
+ revision Int @default(0)
+ @@unique([clientKey,openId])
+ @@index([accessExpiresAt])
+}
+
+model AccessRole {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ name String
+ code String
+ description String @default("")
+ sort Int @default(0)
+ active Boolean @default(true)
+ system Boolean @default(false)
+ permissions String[] @default([])
+ createdAt DateTime @default(now())
+ users UserRole[]
+ @@unique([organizationId,code])
+}
+model UserRole {
+ userId String
+ roleId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ role AccessRole @relation(fields:[roleId],references:[id],onDelete:Restrict)
+ @@id([userId,roleId])
+}
+
+model Material {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ type String
+ name String
+ description String @default("")
+ categoryId String?
+ category MaterialCategory? @relation(fields:[categoryId],references:[id],onDelete:SetNull)
+ categoryPath String[] @default([])
+ tags String[] @default([])
+ priceCents Int @default(0)
+ creatorId String
+ creatorName String
+ voiceAssetId String?
+ voiceAsset Asset? @relation("MaterialVoice",fields:[voiceAssetId],references:[id],onDelete:Restrict)
+ isDefault Boolean @default(false)
+ generationStatus String @default("reference")
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ deletedAt DateTime?
+ files MaterialFile[]
+ @@index([organizationId,type,deletedAt,createdAt])
+}
+model MaterialFile {
+ id String @id @default(cuid())
+ materialId String
+ material Material @relation(fields:[materialId],references:[id],onDelete:Cascade)
+ assetId String
+ asset Asset @relation(fields:[assetId],references:[id],onDelete:Restrict)
+ position Int
+ label String @default("主图")
+ @@unique([materialId,assetId])
+ @@index([assetId])
+}
+
+model MaterialCategory {
+ id String @id @default(cuid())
+ organizationId String
+ organization Organization @relation(fields:[organizationId],references:[id])
+ name String
+ parentId String?
+ parent MaterialCategory? @relation("CategoryTree",fields:[parentId],references:[id],onDelete:Restrict)
+ children MaterialCategory[] @relation("CategoryTree")
+ sort Int @default(0)
+ system Boolean @default(false)
+ createdAt DateTime @default(now())
+ materials Material[]
+ @@index([organizationId,parentId])
+}

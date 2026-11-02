@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+.DS_Store
+coverage/
+
+# Local documentation and archived UI references
+/docs/
+README.md
+/apps/web/prototypes/

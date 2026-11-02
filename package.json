@@ -1,0 +1,40 @@
+{
+  "name": "imp",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run dev -w @imp/api\" \"npm run dev -w web\"",
+    "build": "npm run build -w @imp/api && npm run build -w web",
+    "typecheck": "npm run typecheck -w @imp/api && npm run typecheck -w web",
+    "lint": "npm run lint -w web",
+    "test": "npm run test -w @imp/api",
+    "test:integration": "npm run test:integration -w @imp/api",
+    "db:generate": "npm run db:generate -w @imp/api",
+    "db:migrate": "npm run db:migrate -w @imp/api",
+    "db:seed": "npm run db:seed -w @imp/api",
+    "infra:up": "node scripts/compose.mjs up -d db storage && npm run storage:init",
+    "infra:down": "node scripts/compose.mjs down",
+    "format": "prettier --write \"apps/api/{src,prisma,test}/**/*.ts\" \"apps/web/src/**/*.{ts,tsx}\" \"*.json\" \"apps/*/*.json\" \"*.yml\" \"infra/*.conf\" --ignore-unknown",
+    "storage:init": "npm run storage:init -w @imp/api",
+    "deploy:local": "node scripts/compose.mjs up --build -d"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "prettier": "^3.5.3",
+    "vite": "^7.3.0"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.0",
+    "vite": "$vite",
+    "@nestjs/common": "^11.1.15",
+    "@nestjs/core": "^11.1.15",
+    "@nestjs/platform-express": "^11.1.15",
+    "@nestjs/swagger": "^11.2.0",
+    "js-yaml": "^5.4.1"
+  }
+}
