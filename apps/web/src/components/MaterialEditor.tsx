@@ -37,7 +37,7 @@ interface Values {
   name: string;
   description?: string;
   categoryPath?: string[];
-  tags?: string[];
+  materialDescription?: string;
   price?: number;
   voiceAssetId?: string;
   isDefault?: boolean;
@@ -123,7 +123,8 @@ export default function MaterialEditor({
           description: v.description || "",
           categoryPath: [],
           categoryId: person ? undefined : v.categoryPath?.at(-1),
-          tags: person ? [] : v.tags || [],
+          tags: [],
+          materialDescription: person ? "" : v.materialDescription || "",
           priceCents: person ? 0 : Math.round((v.price || 0) * 100),
           fileIds: files.map((f) => f.id),
           voiceAssetId: person ? v.voiceAssetId : undefined,
@@ -156,6 +157,7 @@ export default function MaterialEditor({
   };
   const imageInput = (
     <MaterialImageUpload
+      materialType={person ? "person" : "product"}
       initialFiles={record?.files || []}
       maxCount={person ? 1 : 10}
       disabled={uploading || saving}
@@ -230,7 +232,7 @@ export default function MaterialEditor({
             name: record?.name || "",
             description: record?.description || "",
             categoryPath: [],
-            tags: record?.tags || [],
+            materialDescription: record?.materialDescription || "",
             price: (record?.priceCents || 0) / 100,
             voiceAssetId: record?.voiceAssetId,
             isDefault: record?.isDefault || false,
@@ -303,12 +305,16 @@ export default function MaterialEditor({
                   style={{ width: "100%" }}
                 />
               </Form.Item>
-              <Form.Item name="tags" label="标签">
-                <Select
-                  mode="tags"
-                  tokenSeparators={[",", "，"]}
-                  maxCount={20}
-                  placeholder="输入标签后按回车"
+              <Form.Item
+                name="materialDescription"
+                label="素材描述"
+                rules={[{ max: 500, message: "素材描述最多500字" }]}
+              >
+                <Input.TextArea
+                  rows={3}
+                  maxLength={500}
+                  showCount
+                  placeholder="描述产品特点、外观或适用场景（选填）"
                 />
               </Form.Item>
             </>

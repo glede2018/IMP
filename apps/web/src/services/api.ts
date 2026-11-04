@@ -7,10 +7,17 @@ export class ApiError extends Error {
     super(message);
   }
 }
+// 切换登录状态后，忽略旧请求返回的会话失效事件，避免误退出新登录。
+let sessionGeneration = 0;
+export const currentSessionGeneration = () => sessionGeneration;
+export const advanceSessionGeneration = () => {
+  sessionGeneration++;
+};
 export async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const generation = sessionGeneration;
   const isForm = options.body instanceof FormData;
   const response = await fetch(`/api/v1${path}`, {
     ...options,
@@ -28,9 +35,16 @@ export async function request<T>(
     if (
       response.status === 401 &&
       path !== "/auth/login" &&
-      path !== "/auth/me"
+      generation === sessionGeneration
     )
-      window.dispatchEvent(new Event("imp-session-expired"));
+      window.dispatchEvent(
+        new CustomEvent("imp-session-expired", {
+          detail:
+            typeof data.message === "string"
+              ? data.message
+              : "登录已失效，请重新登录",
+        }),
+      );
     throw new ApiError(
       response.status,
       Array.isArray(data.message)

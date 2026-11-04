@@ -6,6 +6,7 @@ const Home = lazy(() => import("@/pages/Home"));
 const Accounts = lazy(() => import("@/pages/Accounts"));
 const Templates = lazy(() => import("@/pages/Templates"));
 const MaterialCategories = lazy(() => import("@/pages/MaterialCategories"));
+const Tags = lazy(() => import("@/pages/Tags"));
 const Assets = lazy(() => import("@/pages/Assets"));
 const Works = lazy(() => import("@/pages/Works"));
 const Analytics = lazy(() => import("@/pages/Analytics"));
@@ -45,6 +46,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
       "/templates",
       "/assets",
       "/works",
+      "/tags",
       "/analytics",
       "/help",
       "/permissions/roles",
@@ -71,6 +73,14 @@ export const router = createBrowserRouter([
   { path: "/register", element: <Register /> },
   {
     path: "/",
+    errorElement: (
+      <Result
+        status="error"
+        title="页面暂时无法加载"
+        subTitle="系统可能已更新，请刷新页面后重试。"
+        extra={<Button type="primary" onClick={() => window.location.reload()}>刷新页面</Button>}
+      />
+    ),
     element: (
       <RequireAuth>
         <MainLayout />
@@ -81,6 +91,7 @@ export const router = createBrowserRouter([
       { path: "accounts", element: <Accounts /> },
       { path: "assets", element: <Assets /> },
       { path: "material-categories", element: <MaterialCategories /> },
+      { path: "tags", element: <Tags /> },
       { path: "templates", element: <Templates /> },
       { path: "works", element: <Works /> },
       { path: "video-editor", element: <VideoEditor /> },

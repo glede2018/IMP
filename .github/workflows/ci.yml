@@ -24,6 +24,10 @@ jobs:
           RUSTFS_SECRET_KEY: imp_local_storage_password
         ports: [9000:9000]
     env:
+      STORAGE_PROVIDER: s3
+      TRUSTED_PROXY_CIDRS: loopback,uniquelocal
+      DOUYIN_FANS_SYNC_ENABLED: "false"
+      DOUYIN_VIDEO_API_PROFILE: disabled
       DATABASE_URL: postgresql://imp:test_password@localhost:5432/imp_test?schema=public
       APP_ORIGIN: http://localhost:5173
       S3_ENDPOINT: http://localhost:9000
@@ -41,6 +45,7 @@ jobs:
       - run: npm run build
       - run: npm run lint
       - run: npm test
+      - run: npm run test -w web
       - run: npm run db:migrate
       - run: npm run storage:init
       - run: TEST_STORAGE=true npm run test:integration

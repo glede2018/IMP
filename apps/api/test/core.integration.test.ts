@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../load-env.mjs";
 import { fixtureAccess } from "./access-fixture.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";

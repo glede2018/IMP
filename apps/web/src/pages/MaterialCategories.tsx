@@ -122,6 +122,7 @@ export default function MaterialCategories() {
       <div className="yp-card p-4 mb-4 flex justify-between gap-4 flex-wrap">
         <Space>
           <Input
+            className="yp-search-field"
             aria-label="搜索分类"
             placeholder="搜索分类名称"
             allowClear

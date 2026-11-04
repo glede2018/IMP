@@ -27,6 +27,7 @@ model Organization {
  materials Material[]
  categories MaterialCategory[]
 }
+
 model Store {
  id String @id @default(cuid())
  name String
@@ -54,7 +55,7 @@ model User {
 }
 model Session {
  id String @id
- userId String
+ userId String @unique
  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
  expiresAt DateTime
  createdAt DateTime @default(now())
@@ -76,7 +77,11 @@ model Account {
  updatedAt DateTime @updatedAt
  avatar String?
  authorization AccountAuthorization?
+ platformVideos PlatformVideo[]
+ metricSamples AccountMetricSample[]
+ syncStates DouyinSyncState[]
  @@unique([organizationId,platform,accountId])
+ @@index([platform,id])
 }
 model Asset {
  id String @id @default(cuid())
@@ -97,6 +102,7 @@ model Asset {
  @@index([organizationId,type])
 }
 model Template {
+ revision Int @default(1)
  id String @id @default(cuid())
  organizationId String
  organization Organization @relation(fields:[organizationId],references:[id])
@@ -110,6 +116,8 @@ model Template {
  createdAt DateTime @default(now())
  updatedAt DateTime @updatedAt
  works Work[]
+ trackingTags TemplateTrackingTag[]
+ creationDrafts VideoCreationDraft[]
  @@index([organizationId,category])
 }
 enum WorkStatus {
@@ -119,6 +127,14 @@ enum WorkStatus {
  rejected
 }
 model Work {
+ caption String @default("")
+ publishTags String[] @default([])
+ templateSnapshot Json?
+ creationId String? @unique
+ creation VideoCreationDraft? @relation(fields:[creationId],references:[id],onDelete:Restrict)
+ width Int?
+ height Int?
+ generationSeconds Int?
  id String @id @default(cuid())
  organizationId String
  organization Organization @relation(fields:[organizationId],references:[id])
@@ -213,6 +229,7 @@ model UserRole {
 }
 
 model Material {
+ materialDescription String @default("")
  id String @id @default(cuid())
  organizationId String
  organization Organization @relation(fields:[organizationId],references:[id])
@@ -261,4 +278,112 @@ model MaterialCategory {
  createdAt DateTime @default(now())
  materials Material[]
  @@index([organizationId,parentId])
+}
+
+model TemplateTrackingTag {
+ id String @id @default(cuid())
+ organizationId String
+ templateId String?
+ template Template? @relation(fields:[templateId],references:[id],onDelete:Restrict)
+ tag String
+ name String @default("")
+ code String?
+ description String @default("")
+ sort Int @default(0)
+ active Boolean @default(true)
+ deletedAt DateTime?
+ version String @default("")
+ titleSnapshot String @default("")
+ createdAt DateTime @default(now())
+ videos PlatformVideo[]
+ @@unique([organizationId,tag])
+ @@unique([organizationId,code])
+ @@index([organizationId,templateId])
+}
+model PlatformVideo {
+ id String @id @default(cuid())
+ organizationId String
+ accountId String
+ account Account @relation(fields:[accountId],references:[id],onDelete:Cascade)
+ remoteId String
+ title String
+ tags String[] @default([])
+ publishedAt DateTime
+ bindingId String?
+ binding TemplateTrackingTag? @relation(fields:[bindingId],references:[id],onDelete:SetNull)
+ matchStatus String @default("unmatched")
+ lastSeenAt DateTime @default(now())
+ samples VideoMetricSample[]
+ @@unique([accountId,remoteId])
+ @@index([organizationId,publishedAt])
+}
+model VideoMetricSample {
+ id String @id @default(cuid())
+ videoId String
+ video PlatformVideo @relation(fields:[videoId],references:[id],onDelete:Cascade)
+ bucket DateTime
+ capturedAt DateTime
+ views BigInt
+ likes BigInt
+ comments BigInt
+ shares BigInt
+ @@unique([videoId,bucket])
+ @@index([videoId,capturedAt])
+}
+model AccountMetricSample {
+ id String @id @default(cuid())
+ accountId String
+ account Account @relation(fields:[accountId],references:[id],onDelete:Cascade)
+ bucket DateTime
+ capturedAt DateTime
+ fans BigInt
+ @@unique([accountId,bucket])
+ @@index([accountId,capturedAt])
+}
+model DouyinSyncState {
+ id String @id @default(cuid())
+ accountId String
+ account Account @relation(fields:[accountId],references:[id],onDelete:Cascade)
+ kind String
+ status String @default("idle")
+ message String @default("")
+ cursor String @default("0")
+ runId String?
+ leaseUntil DateTime?
+ nextAttemptAt DateTime?
+ lastSuccessAt DateTime?
+ lastAttemptAt DateTime?
+ failures Int @default(0)
+ processed Int @default(0)
+ updatedAt DateTime @updatedAt
+ @@unique([accountId,kind])
+ @@index([status,nextAttemptAt])
+}
+
+model VideoCreationDraft {
+ workflowSnapshot Json?
+ nodeStates Json @default("{}")
+ error String?
+ leaseUntil DateTime?
+ startedAt DateTime?
+ finishedAt DateTime?
+ work Work?
+ id String @id @default(cuid())
+ organizationId String
+ creatorId String
+ templateId String
+ template Template @relation(fields:[templateId],references:[id],onDelete:Restrict)
+ revision Int
+ title String
+ contentTagIds String[]
+ publishTags String[]
+ trackingTagId String
+ templateSnapshot Json
+ materialSnapshot Json
+ status String @default("awaiting_provider")
+ requestId String
+ createdAt DateTime @default(now())
+ @@index([status,leaseUntil])
+ @@unique([organizationId,requestId])
+ @@index([organizationId,createdAt])
 }

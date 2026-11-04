@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   App,
@@ -19,6 +19,10 @@ import {
   tierMap,
 } from "@/services/api";
 import type { Account, Store } from "@/types";
+import {
+  douyinAuthorizationMessages,
+  openDouyinAuthorization,
+} from "@/services/douyin-authorization";
 const options = (map: Record<string, string>) =>
   Object.entries(map).map(([value, label]) => ({ value, label }));
 interface AuthorizationConfig {
@@ -40,6 +44,10 @@ export default function AccountDialog({
   const { message } = App.useApp();
   const [stores, setStores] = useState<Store[]>([]);
   const [busy, setBusy] = useState(false);
+  const authorizationWindow = useRef<ReturnType<
+    typeof openDouyinAuthorization
+  > | null>(null);
+  useEffect(() => () => authorizationWindow.current?.dispose(), []);
   const [config, setConfig] = useState<AuthorizationConfig | null>(null);
   const platform = Form.useWatch("platform", form);
   const isNewDouyin = target === "new" && platform === "douyin";
@@ -59,9 +67,22 @@ export default function AccountDialog({
       .catch((e) => message.error(e.message));
   }, [target, form, message]);
   const authorize = async (mode: "live" | "demo") => {
+    let popup: ReturnType<typeof openDouyinAuthorization> | undefined;
     try {
-      const values = await form.validateFields(["platform", "tier", "storeId"]);
       setBusy(true);
+      authorizationWindow.current?.dispose();
+      popup = openDouyinAuthorization((result) => {
+        const text = douyinAuthorizationMessages[result];
+        if (result === "connected") message.success(text);
+        else if (["demo", "cancelled"].includes(result)) message.info(text);
+        else message.error(text);
+        if (["connected", "demo"].includes(result)) {
+          onSaved();
+          onClose();
+        }
+      });
+      authorizationWindow.current = popup;
+      const values = await form.validateFields(["platform", "tier", "storeId"]);
       const result = await save<{ authorizationUrl: string }>(
         "/oauth/douyin/start",
         {
@@ -71,8 +92,9 @@ export default function AccountDialog({
           mode,
         },
       );
-      window.location.assign(result.authorizationUrl);
+      popup.navigate(result.authorizationUrl);
     } catch (e) {
+      popup?.close();
       if (e instanceof Error) message.error(e.message);
     } finally {
       setBusy(false);
@@ -165,7 +187,7 @@ export default function AccountDialog({
           className="mb-4"
           message={
             config?.ready
-              ? "通过抖音官方页面扫码授权，成功后自动获取昵称和头像。"
+              ? "在新窗口打开抖音官方页面扫码授权，成功后自动获取昵称和头像。"
               : config?.reason || "正在检查抖音授权配置…"
           }
           description={

@@ -1,3 +1,4 @@
+import { validateTemplateConfig } from "./workflow-definition.js";
 import { ApiCookieAuth, ApiConsumes, ApiBody } from "@nestjs/swagger";
 import {
   Controller,
@@ -26,7 +27,7 @@ import { Prisma } from "@prisma/client";
 import type { Response } from "express";
 import { accountView, authorizationSelect } from "./douyin.js";
 import { Database } from "./database.js";
-import { Storage } from "./storage.js";
+import { Storage, downloadDisposition } from "./storage.js";
 import { SessionGuard, AuthRequest, requireRole } from "./auth.js";
 import {
   PageDto,
@@ -38,6 +39,7 @@ import {
   StoreDto,
   HelpDto,
 } from "./dto.js";
+import { normalizeTrackingTag } from "./douyin-data-provider.js";
 import { hasPermission, permissionsFor } from "./permissions.js";
 import { allowedTransition } from "./security.js";
 const paging = (q: PageDto) => ({
@@ -46,19 +48,22 @@ const paging = (q: PageDto) => ({
 });
 const contains = (q?: string) =>
   q ? { contains: q, mode: "insensitive" as const } : undefined;
-const assetView = (a: {
-  id: string;
-  objectKey?: string;
-  [key: string]: unknown;
-}) => {
+const assetView = async (
+  storage: Storage,
+  a: {
+    id: string;
+    objectKey?: string;
+    [key: string]: unknown;
+  },
+) => {
   const { objectKey, ...view } = a;
   return {
     ...view,
-    preview: `/api/v1/assets/${a.id}/file`,
-    downloadUrl: `/api/v1/assets/${a.id}/file?download=1`,
+    ...(await storage.links(a)),
   };
 };
-const workView = (
+const workView = async (
+  storage: Storage,
   w:
     | Prisma.WorkGetPayload<{
         include: {
@@ -67,14 +72,17 @@ const workView = (
         };
       }>
     | Prisma.WorkGetPayload<{ include: { asset: true } }>,
-) => ({
-  ...w,
-  asset: assetView(w.asset),
-  fileUrl: `/api/v1/assets/${w.assetId}/file`,
-  downloadUrl: `/api/v1/assets/${w.assetId}/file?download=1`,
-  size: w.asset.size,
-  format: w.asset.mimeType,
-});
+) => {
+  const asset = await assetView(storage, w.asset);
+  return {
+    ...w,
+    asset,
+    fileUrl: asset.preview,
+    downloadUrl: asset.downloadUrl,
+    size: w.asset.size,
+    format: w.asset.mimeType,
+  };
+};
 @Injectable()
 export class Operations {
   constructor(private db: Database) {}
@@ -234,7 +242,7 @@ export class AssetsController {
       this.db.asset.count({ where }),
     ]);
     return {
-      items: items.map(assetView),
+      items: await Promise.all(items.map((a) => assetView(this.storage, a))),
       total,
       page: q.page,
       pageSize: q.pageSize,
@@ -259,7 +267,7 @@ export class AssetsController {
   })
   @UseInterceptors(
     FileInterceptor("file", {
-      limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 3 },
+      limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 4 },
     }),
   )
   async upload(
@@ -276,13 +284,17 @@ export class AssetsController {
       .filter(Boolean);
     if (tags.length > 20 || tags.some((t) => t.length > 40))
       throw new BadRequestException("最多 20 个标签，每个不超过 40 字");
+    if (dto.purpose === "template" && dto.type !== "image")
+      throw new BadRequestException("模板封面必须使用图片类型");
     const stored = await this.storage.upload(
       file,
       req.user.organizationId,
       dto.type,
+      dto.purpose,
     );
     try {
-      return assetView(
+      return await assetView(
+        this.storage,
         await this.ops.change(
           req,
           "asset.upload",
@@ -309,6 +321,17 @@ export class AssetsController {
     @Res() res: Response,
   ) {
     const asset = await this.ops.asset(id, req);
+    const links = await this.storage.links(asset);
+    if (links.preview.startsWith("https://")) {
+      res.setHeader("Cache-Control", "private, no-store");
+      res.redirect(
+        302,
+        req.query.download === "1"
+          ? (await this.storage.downloadLink(asset)) || links.preview
+          : links.preview,
+      );
+      return;
+    }
     const range = req.get("range");
     if (range && !/^bytes=(\d+-\d*|-\d+)$/.test(range))
       throw new BadRequestException("无效的文件范围");
@@ -322,28 +345,7 @@ export class AssetsController {
       res.setHeader("Content-Range", file.ContentRange);
     }
     if (req.query.download === "1") {
-      const extensions: Record<string, string> = {
-        "image/jpeg": ".jpg",
-        "image/png": ".png",
-        "image/webp": ".webp",
-        "video/mp4": ".mp4",
-        "video/quicktime": ".mov",
-        "audio/mpeg": ".mp3",
-        "audio/wav": ".wav",
-        "audio/x-wav": ".wav",
-        "audio/ogg": ".ogg",
-        "audio/mp4": ".m4a",
-        "text/plain": ".txt",
-      };
-      const extension = extensions[asset.mimeType] || "";
-      const hasExtension =
-        asset.name.toLowerCase().endsWith(extension) ||
-        (asset.mimeType === "image/jpeg" && /\.jpeg$/i.test(asset.name));
-      const filename = hasExtension ? asset.name : asset.name + extension;
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-      );
+      res.setHeader("Content-Disposition", downloadDisposition(asset));
     }
     const stream = file.Body as import("node:stream").Readable;
     stream.on("error", () => res.destroy());
@@ -382,6 +384,7 @@ export class TemplatesController {
   constructor(
     private db: Database,
     private ops: Operations,
+    private storage: Storage,
   ) {}
   @Get() async list(@Query() q: PageDto, @Req() req: AuthRequest) {
     const where = {
@@ -392,12 +395,25 @@ export class TemplatesController {
     const [items, total] = await this.db.$transaction([
       this.db.template.findMany({
         where,
+        include: { coverAsset: true },
         ...paging(q),
         orderBy: { createdAt: "desc" },
       }),
       this.db.template.count({ where }),
     ]);
-    return { items, total, page: q.page, pageSize: q.pageSize };
+    return {
+      items: await Promise.all(
+        items.map(async ({ coverAsset, ...t }) => ({
+          ...t,
+          cover: coverAsset
+            ? (await this.storage.links(coverAsset)).preview
+            : null,
+        })),
+      ),
+      total,
+      page: q.page,
+      pageSize: q.pageSize,
+    };
   }
   async validate(dto: TemplateDto, req: AuthRequest) {
     if (
@@ -407,11 +423,11 @@ export class TemplatesController {
       )
     )
       throw new BadRequestException("封面必须是图片");
-    if (JSON.stringify(dto.config).length > 16000)
-      throw new BadRequestException("模板配置超过 16 KB");
+    dto.config = validateTemplateConfig(dto.config);
   }
   @Post() async create(@Body() dto: TemplateDto, @Req() req: AuthRequest) {
-    requireRole(req);
+    if (!hasPermission(permissionsFor(req.user), "templates:create"))
+      throw new ForbiddenException("缺少添加模板权限");
     await this.validate(dto, req);
     return this.ops.change(
       req,
@@ -425,6 +441,49 @@ export class TemplatesController {
         },
       }),
     );
+  }
+  @Post("cover")
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 3 * 1024 * 1024, files: 1, fields: 0 },
+    }),
+  )
+  async uploadCover(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: AuthRequest,
+  ) {
+    if (!hasPermission(permissionsFor(req.user), "templates:create"))
+      throw new ForbiddenException("缺少添加模板权限");
+    if (!file || !file.size)
+      throw new BadRequestException("请选择非空封面图片，最大 3 MB");
+    const stored = await this.storage.upload(
+      file,
+      req.user.organizationId,
+      "image",
+      "template",
+    );
+    try {
+      return await assetView(
+        this.storage,
+        await this.ops.change(
+          req,
+          "template.cover.upload",
+          stored.objectKey,
+          this.db.asset.create({
+            data: {
+              ...stored,
+              name: "模板封面",
+              type: "image",
+              organizationId: req.user.organizationId,
+            },
+          }),
+        ),
+      );
+    } catch (e) {
+      await this.storage.remove(stored.objectKey).catch(() => undefined);
+      throw e;
+    }
   }
   @Put(":id") async update(
     @Param("id") id: string,
@@ -442,6 +501,7 @@ export class TemplatesController {
         data: {
           ...dto,
           coverAssetId: dto.coverAssetId || null,
+          revision: { increment: 1 },
           config: dto.config as Prisma.InputJsonObject,
         },
       }),
@@ -470,6 +530,7 @@ export class WorksController {
   constructor(
     private db: Database,
     private ops: Operations,
+    private storage: Storage,
   ) {}
   @Get() async list(@Query() q: PageDto, @Req() req: AuthRequest) {
     const where = {
@@ -490,7 +551,7 @@ export class WorksController {
       this.db.work.count({ where }),
     ]);
     return {
-      items: items.map(workView),
+      items: await Promise.all(items.map((w) => workView(this.storage, w))),
       total,
       page: q.page,
       pageSize: q.pageSize,
@@ -498,6 +559,22 @@ export class WorksController {
   }
   @Post() async create(@Body() dto: WorkDto, @Req() req: AuthRequest) {
     requireRole(req);
+    if (!!dto.width !== !!dto.height)
+      throw new BadRequestException("请同时提供视频宽度与高度");
+    const publishTags = [
+      ...new Set(
+        (dto.publishTags || []).map((tag) => {
+          try {
+            normalizeTrackingTag(tag);
+          } catch {
+            throw new BadRequestException(
+              "hashtag 仅支持中英文、数字和下划线，最多100字符",
+            );
+          }
+          return tag.trim().replace(/^#/, "");
+        }),
+      ),
+    ];
     const asset = await this.ops.asset(dto.assetId, req);
     if (!asset.mimeType.startsWith("video/"))
       throw new BadRequestException("作品必须关联视频素材");
@@ -510,6 +587,7 @@ export class WorksController {
       throw new BadRequestException("模板不存在");
     const { materialIds = [], ...data } = dto;
     return workView(
+      this.storage,
       await this.db.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${req.user.organizationId + ":materials"}))`;
         if (
@@ -533,6 +611,33 @@ export class WorksController {
           }))
         )
           throw new BadRequestException("素材已删除，不能用于新作品");
+        const creation = dto.creationId
+          ? await tx.videoCreationDraft.findFirst({
+              where: {
+                id: dto.creationId,
+                organizationId: req.user.organizationId,
+              },
+            })
+          : null;
+        if (dto.creationId && !creation)
+          throw new BadRequestException("生成配置不存在");
+        if (
+          creation &&
+          dto.templateId &&
+          creation.templateId !== dto.templateId
+        )
+          throw new BadRequestException("模板与生成配置不匹配");
+        if (creation && materialIds.length)
+          throw new BadRequestException("生成配置已固定素材，不能替换历史素材");
+        const template =
+          !creation && dto.templateId
+            ? await tx.template.findFirst({
+                where: {
+                  id: dto.templateId,
+                  organizationId: req.user.organizationId,
+                },
+              })
+            : null;
         const materials = await tx.material.findMany({
           where: {
             organizationId: req.user.organizationId,
@@ -547,19 +652,44 @@ export class WorksController {
           data: {
             ...data,
             organizationId: req.user.organizationId,
-            materialSnapshot: materials.map((m) => ({
-              id: m.id,
-              type: m.type,
-              name: m.name,
-              description: m.description,
-              tags: m.tags,
-              categoryPath: m.categoryPath,
-              priceCents: m.priceCents,
-              voiceAssetId: m.voiceAssetId,
-              fileIds: m.files.map((f) => f.assetId),
-            })),
+            title: creation?.title || dto.title,
+            templateId: creation?.templateId || dto.templateId,
+            caption: dto.caption || "",
+            publishTags: creation?.publishTags || publishTags,
+            templateSnapshot: creation
+              ? (creation.templateSnapshot as Prisma.InputJsonValue)
+              : template
+                ? {
+                    id: template.id,
+                    title: template.title,
+                    revision: template.revision,
+                  }
+                : undefined,
+            materialSnapshot: creation
+              ? (creation.materialSnapshot as Prisma.InputJsonValue)
+              : materials.map((m) => ({
+                  id: m.id,
+                  type: m.type,
+                  name: m.name,
+                  description: m.description,
+                  materialDescription: m.materialDescription,
+                  tags: m.tags,
+                  categoryPath: m.categoryPath,
+                  priceCents: m.priceCents,
+                  voiceAssetId: m.voiceAssetId,
+                  fileIds: m.files.map((f) => f.assetId),
+                })),
           },
           include: { asset: true },
+        });
+        if (creation)
+          await tx.videoCreationDraft.update({
+            where: { id: creation.id },
+            data: { status: "completed" },
+          });
+        await tx.asset.update({
+          where: { id: dto.assetId },
+          data: { retained: true },
         });
         await tx.auditLog.create({
           data: {
@@ -601,6 +731,7 @@ export class WorksController {
     )
       throw new ForbiddenException("无权进行该审核状态变更");
     return workView(
+      this.storage,
       await this.ops.change(
         req,
         "work.update",

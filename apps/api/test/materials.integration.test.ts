@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../load-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -65,12 +65,44 @@ test("material library: storage, validation, ordering, search, tenant default, s
     const upload = async (bytes: Buffer, mime = "image/png") => {
       const f = new FormData();
       f.append("file", new Blob([bytes], { type: mime }), "sample.png");
-      return call("/materials/files", "POST", f, cookie);
+      return call("/materials/files?type=product", "POST", f, cookie);
     };
     const first = await upload(png);
     const second = await upload(png);
     assert.equal(first.status, 201);
     assert.equal(second.status, 201);
+    const uploadedProduct = await db.asset.findUniqueOrThrow({
+      where: { id: first.data.id },
+    });
+    assert.match(
+      uploadedProduct.objectKey,
+      new RegExp(
+        `^(oss://[^/]+/)?products/\\d{4}/\\d{4}/${org.id}/[0-9a-f-]+\\.png$`,
+      ),
+    );
+    const personForm = new FormData();
+    personForm.append(
+      "file",
+      new Blob([png], { type: "image/png" }),
+      "person.png",
+    );
+    const personUpload = await call(
+      "/materials/files?type=person",
+      "POST",
+      personForm,
+      cookie,
+    );
+    assert.equal(personUpload.status, 201);
+    const uploadedPerson = await db.asset.findUniqueOrThrow({
+      where: { id: personUpload.data.id },
+    });
+    assert.match(
+      uploadedPerson.objectKey,
+      new RegExp(
+        `^(oss://[^/]+/)?persons/\\d{4}/\\d{4}/${org.id}/[0-9a-f-]+\\.png$`,
+      ),
+    );
+
     assert.equal((await upload(Buffer.from("not-an-image"))).status, 400);
     assert.equal((await upload(Buffer.alloc(3 * 1024 * 1024 + 1))).status, 413);
     await db.materialCategory.create({
@@ -84,6 +116,7 @@ test("material library: storage, validation, ordering, search, tenant default, s
       type: "product",
       name: "草莓蛋糕",
       description: "当季新鲜草莓与淡奶油",
+      materialDescription: "适合生日与新品推广场景",
       categoryPath: ["食品", "蛋糕"],
       tags: ["新品推荐"],
       priceCents: 12990,
@@ -92,6 +125,30 @@ test("material library: storage, validation, ordering, search, tenant default, s
     };
     const created = await call("/materials", "POST", product, cookie);
     assert.equal(created.status, 201);
+    assert.equal(created.data.materialDescription, product.materialDescription);
+    assert.deepEqual(created.data.tags, []);
+    assert.equal(
+      (
+        await call(
+          "/materials",
+          "POST",
+          { ...product, materialDescription: "x".repeat(501) },
+          cookie,
+        )
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await call(
+          "/materials?type=product&q=" + encodeURIComponent("推荐"),
+          "GET",
+          undefined,
+          cookie,
+        )
+      ).data.total,
+      0,
+    );
     assert(!JSON.stringify(created.data).includes("objectKey"));
     assert.equal(created.data.creatorName, "测试创建者");
     const materialId = created.data.id;
@@ -189,6 +246,10 @@ test("material library: storage, validation, ordering, search, tenant default, s
     );
     assert.equal(work.status, 201);
     assert.equal(work.data.materialSnapshot[0].name, "草莓蛋糕");
+    assert.equal(
+      work.data.materialSnapshot[0].materialDescription,
+      product.materialDescription,
+    );
     const updated = await call(
       "/materials/" + materialId,
       "PUT",

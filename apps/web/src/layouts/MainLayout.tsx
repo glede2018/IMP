@@ -7,16 +7,15 @@ import {
   BarChartOutlined,
   QuestionCircleOutlined,
   DownOutlined,
-  SearchOutlined,
   BellOutlined,
   BulbOutlined,
-  CrownOutlined,
   PlusOutlined,
   LogoutOutlined,
   SwapOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Input, Badge, Avatar, Button, Dropdown, App, Spin } from "antd";
+import { Badge, Avatar, Button, Dropdown, App, Spin } from "antd";
+import GlobalSearch from "@/components/GlobalSearch";
 import { canAccess } from "@/services/permissions";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -38,6 +37,7 @@ const contentCreationNav = {
     { key: "/assets", label: "素材库" },
     { key: "/material-categories", label: "素材分类" },
     { key: "/works", label: "我的作品" },
+    { key: "/tags", label: "标签管理" },
   ],
 };
 
@@ -59,9 +59,14 @@ const bottomNav = [
 
 /** 判断内容创作是否处于高亮状态 */
 function isContentCreationActive(pathname: string): boolean {
-  return ["/templates", "/assets", "/works", "/material-categories"].some((p) =>
-    pathname.startsWith(p),
-  );
+  return [
+    "/templates",
+    "/assets",
+    "/works",
+    "/material-categories",
+    "/tags",
+    "/video-editor",
+  ].some((p) => pathname.startsWith(p));
 }
 
 /** 判断策略中心是否处于高亮状态 */
@@ -81,6 +86,8 @@ const pageTitleMap: Record<string, string> = {
   "/assets": "素材库",
   "/material-categories": "素材分类",
   "/works": "我的作品",
+  "/tags": "标签管理",
+  "/video-editor": "使用模板生成视频",
   "/strategy/product-selection": "选品策略",
   "/strategy/social-monitor": "社媒监控",
   "/strategy/topic": "营销策略",
@@ -344,37 +351,7 @@ export default function MainLayout() {
           )}
         </nav>
 
-        {/* 底部企业版信息卡 */}
-        <div
-          className="p-4"
-          style={{ borderTop: "1px solid var(--yp-border)" }}
-        >
-          <div
-            className="yp-card p-4"
-            style={{
-              background: "var(--yp-primary-50)",
-              borderColor: "var(--yp-primary-100)",
-            }}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <span style={{ color: "var(--yp-primary-600)" }}>
-                <CrownOutlined />
-              </span>
-              <span
-                className="text-sm font-semibold"
-                style={{ color: "var(--yp-primary-800)" }}
-              >
-                企业版
-              </span>
-            </div>
-            <p
-              className="text-xs leading-relaxed"
-              style={{ color: "var(--yp-neutral-600)" }}
-            >
-              已开通矩阵账号无限绑定权限
-            </p>
-          </div>
-        </div>
+        
       </aside>
 
       {/* 右侧主区域 */}
@@ -388,13 +365,7 @@ export default function MainLayout() {
             {getPageTitle(location.pathname)}
           </h1>
           <div className="flex items-center gap-4">
-            <Input
-              prefix={
-                <SearchOutlined style={{ color: "var(--yp-neutral-400)" }} />
-              }
-              placeholder="搜索账号、模板、作品"
-              style={{ width: 256 }}
-            />
+            <GlobalSearch />
             {location.pathname === "/accounts" && (
               <Button
                 type="primary"

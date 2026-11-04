@@ -88,6 +88,10 @@ export class AccountDto {
   storeId?: string;
 }
 export class AssetDto {
+  @IsOptional()
+  @IsIn(["template"])
+  @ApiPropertyOptional({ type: String, enum: ["template"] })
+  purpose?: "template";
   @IsString() @Length(1, 200) @ApiProperty({ type: String }) name!: string;
   @IsIn(["product", "copy", "image", "portrait", "voice"])
   @ApiProperty({ type: String })
@@ -121,6 +125,18 @@ export class TemplateDto {
   coverAssetId?: string;
 }
 export class WorkDto {
+  @IsOptional() @IsString() @Length(1, 100) creationId?: string;
+  @IsOptional() @IsString() @Length(0, 2000) caption?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Length(1, 101, { each: true })
+  publishTags?: string[];
+  @IsOptional() @IsInt() @Min(1) @Max(16384) width?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(16384) height?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(86400) generationSeconds?: number;
+
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(20)

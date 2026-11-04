@@ -1,6 +1,6 @@
-import "dotenv/config";
+import "../load-env.mjs";
 import { PrismaClient } from "@prisma/client";
-import { hashPassword } from "../src/security.js";
+import { hashPassword } from "./security.js";
 const db = new PrismaClient();
 async function seed() {
   const phone = process.env.BOOTSTRAP_PHONE;

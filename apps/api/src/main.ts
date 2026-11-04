@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../load-env.mjs";
 import { createApp } from "./app.js";
 createApp()
   .then((app) => app.listen(Number(process.env.PORT || 3001), "0.0.0.0"))

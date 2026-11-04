@@ -11,6 +11,7 @@ export interface Material {
   type: "product" | "person";
   name: string;
   description: string;
+  materialDescription?: string;
   categoryId?: string;
   categoryPath: string[];
   tags: string[];
@@ -33,6 +34,7 @@ export interface MaterialInput {
   type: Material["type"];
   name: string;
   description: string;
+  materialDescription?: string;
   categoryId?: string;
   categoryPath: string[];
   tags: string[];

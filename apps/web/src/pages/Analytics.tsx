@@ -28,6 +28,7 @@ import {
   VideoDetail,
 } from "@/components/analytics/AnalyticsPanels";
 import "./analytics.css";
+import LiveAnalytics from "@/components/analytics/LiveAnalytics";
 
 const tabs = [
   { key: "content", label: "内容运营" },
@@ -37,6 +38,7 @@ const tabs = [
   { key: "orders", label: "订单与核销" },
 ];
 export default function Analytics() {
+  const [live, setLive] = useState(true);
   const [params, setParams] = useSearchParams();
   const active = tabs.some((t) => t.key === params.get("tab"))
     ? params.get("tab")!
@@ -100,6 +102,7 @@ export default function Analytics() {
     setSelectedTemplate(id);
     goTab("templates");
   };
+  if (live) return <LiveAnalytics onDemo={() => setLive(false)} />;
   return (
     <div className="dc-page">
       <div className="yp-page-header dc-header">
@@ -109,7 +112,10 @@ export default function Analytics() {
             内容效果与带货贡献分析 · 从账号、视频和模板，找到值得复用的内容。
           </p>
         </div>
-        <Tag color="orange">演示模式 · 全部为虚拟数据</Tag>
+        <Space>
+          <Tag color="orange">演示模式 · 全部为虚拟数据</Tag>
+          <Button onClick={() => setLive(true)}>查看真实数据</Button>
+        </Space>
       </div>
       <div className="dc-filters">
         <Space wrap size={12}>

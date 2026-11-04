@@ -1,4 +1,18 @@
+import { appOrigins } from "./app-origins.js";
+import {
+  WorkflowEngine,
+  WorkflowProvider,
+  WorkflowRunsController,
+} from "./workflow-engine.js";
 import "reflect-metadata";
+import { WorksLibraryController } from "./works-library.js";
+import { TagsController } from "./tags.js";
+import { TemplateCreationsController } from "./template-creations.js";
+import {
+  DouyinAnalyticsController,
+  DouyinAnalyticsService,
+} from "./douyin-analytics.js";
+import { DouyinDataProvider } from "./douyin-data-provider.js";
 import { MaterialCategoriesController } from "./material-categories.js";
 import { MaterialsController } from "./materials.js";
 import { AccessController } from "./access.js";
@@ -14,7 +28,10 @@ import {
   Get,
 } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { ExpressAdapter } from "@nestjs/platform-express";
+import {
+  type NestExpressApplication,
+  ExpressAdapter,
+} from "@nestjs/platform-express";
 import { APP_GUARD } from "@nestjs/core";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
@@ -25,6 +42,8 @@ import { DouyinController, DouyinService } from "./douyin.js";
 import { DouyinProvider } from "./douyin-provider.js";
 import { Database } from "./database.js";
 import { Storage } from "./storage.js";
+import { storageConfig } from "../storage-config.mjs";
+import { trustedProxyRanges } from "./proxy-config.js";
 import { AuthController, SessionGuard } from "./auth.js";
 import {
   AccountsController,
@@ -92,8 +111,12 @@ class ErrorFilter implements ExceptionFilter {
 @Module({
   imports: [ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }])],
   controllers: [
+    WorksLibraryController,
+    TemplateCreationsController,
+    TagsController,
     MaterialCategoriesController,
     MaterialsController,
+    WorkflowRunsController,
     AccessController,
     HealthController,
     DouyinController,
@@ -105,11 +128,16 @@ class ErrorFilter implements ExceptionFilter {
     OrganizationController,
     HelpController,
     AnalyticsController,
+    DouyinAnalyticsController,
   ],
   providers: [
+    WorkflowEngine,
+    WorkflowProvider,
     Database,
     DouyinProvider,
     DouyinService,
+    DouyinDataProvider,
+    DouyinAnalyticsService,
     Storage,
     SessionGuard,
     Operations,
@@ -118,17 +146,19 @@ class ErrorFilter implements ExceptionFilter {
 })
 class AppModule {}
 export async function createApp() {
-  for (const key of [
-    "DATABASE_URL",
-    "APP_ORIGIN",
-    "S3_ENDPOINT",
-    "S3_BUCKET",
-    "S3_ACCESS_KEY",
-    "S3_SECRET_KEY",
-  ])
+  for (const key of ["DATABASE_URL", "APP_ORIGIN"])
     if (!process.env[key])
       throw new Error(`Missing environment variable: ${key}`);
-  const app = await NestFactory.create(AppModule, new ExpressAdapter());
+  storageConfig();
+  const proxies = trustedProxyRanges();
+  const origins = appOrigins();
+  const app = await NestFactory.create<NestExpressApplication>(
+    AppModule,
+    new ExpressAdapter(),
+    { bodyParser: false },
+  );
+  app.useBodyParser("json", { limit: "1mb" });
+  app.getHttpAdapter().getInstance().set("trust proxy", proxies);
   app.setGlobalPrefix("api/v1");
   app.use(
     helmet({
@@ -137,7 +167,7 @@ export async function createApp() {
     }),
   );
   app.use(cookieParser());
-  app.enableCors({ origin: process.env.APP_ORIGIN, credentials: true });
+  app.enableCors({ origin: origins, credentials: true });
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,

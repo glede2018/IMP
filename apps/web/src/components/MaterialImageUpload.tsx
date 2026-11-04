@@ -9,6 +9,7 @@ import {
 import type { MaterialFile } from "@/services/materials";
 import { uploadHeaders, uploadErrorMessage } from "@/services/upload";
 interface Props {
+  materialType: "product" | "person";
   initialFiles: MaterialFile[];
   maxCount: number;
   disabled: boolean;
@@ -18,6 +19,7 @@ interface Props {
   onUploaded: (file: MaterialFile) => void;
 }
 export default function MaterialImageUpload({
+  materialType,
   initialFiles,
   maxCount,
   disabled,
@@ -94,7 +96,7 @@ export default function MaterialImageUpload({
   return (
     <>
       <Upload.Dragger
-        action="/api/v1/materials/files"
+        action={`/api/v1/materials/files?type=${materialType}`}
         name="file"
         headers={uploadHeaders}
         withCredentials

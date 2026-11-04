@@ -1,3 +1,4 @@
+import { validRequestOrigin } from "./app-origins.js";
 import {
   Injectable,
   CanActivate,
@@ -80,22 +81,35 @@ export class SessionGuard implements CanActivate {
       include: { user: { include: accessInclude } },
     });
     if (!session || session.expiresAt <= new Date() || !session.user.active)
-      throw new UnauthorizedException("登录已过期，请重新登录");
+      throw new UnauthorizedException(
+        "登录已失效，请重新登录；同一账号仅允许一处登录",
+      );
     if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-      // Same-origin header + non-simple requests stop cross-site form and fetch mutations.
-      if (
-        req.get("X-IMP-Request") !== "1" ||
-        req.get("Origin") !== process.env.APP_ORIGIN
-      )
+      // 自定义请求头与明确的来源白名单共同防止跨站提交。
+      if (!validRequestOrigin(req))
         throw new ForbiddenException("请求来源无效");
     }
     const permissions = permissionsFor(session.user);
     const key = moduleFor(req.path);
+    const workFile =
+      key === "assets" &&
+      ["GET", "HEAD"].includes(req.method) &&
+      /^\/api\/v1\/assets\/[^/]+\/file$/.test(req.path) &&
+      hasPermission(permissions, "works")
+        ? await this.db.work.findFirst({
+            where: {
+              organizationId: session.user.organizationId,
+              assetId: req.path.split("/")[4],
+            },
+            select: { id: true },
+          })
+        : null;
     if (
       key &&
       !["auth", "health"].includes(key) &&
       !req.path.endsWith("/organization/stores") &&
       !hasPermission(permissions, key) &&
+      !workFile &&
       !(key === "analytics" && hasPermission(permissions, "home"))
     )
       throw new ForbiddenException("没有此菜单访问权限");
@@ -114,11 +128,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (
-      req.get("X-IMP-Request") !== "1" ||
-      req.get("Origin") !== process.env.APP_ORIGIN
-    )
-      throw new ForbiddenException("请求来源无效");
+    if (!validRequestOrigin(req)) throw new ForbiddenException("请求来源无效");
     if (!dto.phone && !dto.account)
       throw new UnauthorizedException("请输入账号或手机号");
     const user = await this.db.user.findUnique({
@@ -129,23 +139,30 @@ export class AuthController {
     const valid = verifyPassword(dto.password, user?.passwordHash ?? dummyHash);
     if (!user || !valid || !user.active)
       throw new UnauthorizedException("账号、手机号或密码错误");
-    await this.db.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
     const token = randomBytes(32).toString("hex");
     const days = Number(process.env.SESSION_DAYS || 7);
-    await this.db.$transaction(async (tx) => {
-      const previous = req.cookies?.[cookieName];
-      if (typeof previous === "string")
-        await tx.session.deleteMany({ where: { id: tokenHash(previous) } });
-      await tx.session.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    const currentUser = await this.db.$transaction(async (tx) => {
+      // 锁定账号，串行处理同一账号的并发登录，避免同时生成两个有效会话。
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id=${user.id} FOR UPDATE`;
+      const current = await tx.user.findUnique({
+        where: { id: user.id },
+        include: { organization: true, ...accessInclude },
+      });
+      if (!current?.active || current.passwordHash !== user.passwordHash)
+        throw new UnauthorizedException("账号状态或密码已变更，请重新登录");
+      // 新登录替换旧会话，关联的未完成授权状态随旧会话级联清理。
+      await tx.session.deleteMany({ where: { userId: user.id } });
       await tx.session.create({
         data: {
           id: tokenHash(token),
           userId: user.id,
           expiresAt: new Date(Date.now() + days * 86400000),
         },
+      });
+      return tx.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+        include: { organization: true, ...accessInclude },
       });
     });
     res.cookie(cookieName, token, {
@@ -157,7 +174,7 @@ export class AuthController {
       path: "/",
       maxAge: days * 86400000,
     });
-    return userView(user);
+    return userView(currentUser);
   }
   @Get("me")
   @UseGuards(SessionGuard)

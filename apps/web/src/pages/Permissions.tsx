@@ -1,3 +1,4 @@
+import { selectPermission } from "@/services/permission-selection";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -33,6 +34,7 @@ interface AccessRole {
   _count: { users: number };
 }
 interface Catalog {
+  group: string;
   key: string;
   label: string;
 }
@@ -82,6 +84,18 @@ export default function Permissions({ kind }: { kind: "roles" | "users" }) {
     queryKey: ["permission-catalog"],
     queryFn: () => request<Catalog[]>("/permissions/catalog"),
   });
+  const permissionGroups = [
+    ...new Set((catalog.data || []).map((item) => item.group)),
+  ];
+  const owns = (key: string) =>
+    !!user &&
+    (user.permissions.includes("*") || user.permissions.includes(key));
+  const canManageRole = (role: AccessRole) =>
+    !role.system &&
+    !user?.roles.some((r) => r.id === role.id) &&
+    role.permissions.every(owns);
+  const canManageUser = (target: UserInfo) =>
+    target.id === user?.id || target.permissions.every(owns);
   const error = roles.error || users.error || catalog.error;
   const refresh = async () => {
     await Promise.all([
@@ -171,7 +185,11 @@ export default function Permissions({ kind }: { kind: "roles" | "users" }) {
     });
   const roleOptions = roles.data
     ?.filter((r) => r.active)
-    .map((r) => ({ value: r.id, label: r.name }));
+    .map((r) => ({
+      value: r.id,
+      label: r.name,
+      disabled: !r.permissions.every(owns),
+    }));
   const roleRows = (roles.data || []).filter(
     (r) =>
       (!query ||
@@ -220,6 +238,7 @@ export default function Permissions({ kind }: { kind: "roles" | "users" }) {
       <div className="yp-card p-4 mb-4 flex items-center justify-between gap-4 flex-wrap">
         <Space wrap>
           <Input
+            className="yp-search-field"
             aria-label={isRoles ? "角色查询" : "用户查询"}
             placeholder={isRoles ? "角色名称 / 角色编码" : "用户账号 / 昵称"}
             value={text}
@@ -321,14 +340,14 @@ export default function Permissions({ kind }: { kind: "roles" | "users" }) {
                   <Space size={12}>
                     <Button
                       type="link"
-                      disabled={r.system}
+                      disabled={!canManageRole(r)}
                       onClick={() => open(r, "permissions")}
                     >
                       分配权限
                     </Button>
                     <Button
                       type="link"
-                      disabled={r.system}
+                      disabled={!canManageRole(r)}
                       onClick={() => open(r)}
                     >
                       编辑
@@ -336,7 +355,7 @@ export default function Permissions({ kind }: { kind: "roles" | "users" }) {
                     <Button
                       type="link"
                       danger
-                      disabled={r.system}
+                      disabled={!canManageRole(r)}
                       onClick={() => confirmDelete(r)}
                     >
                       删除
@@ -408,23 +427,31 @@ export default function Permissions({ kind }: { kind: "roles" | "users" }) {
                 width: 320,
                 render: (_, u) => (
                   <Space size={12}>
-                    <Button type="link" onClick={() => open(u)}>
+                    <Button
+                      type="link"
+                      disabled={!canManageUser(u)}
+                      onClick={() => open(u)}
+                    >
                       编辑
                     </Button>
                     <Button
                       type="link"
-                      disabled={u.id === user?.id}
+                      disabled={u.id === user?.id || !canManageUser(u)}
                       onClick={() => open(u, "roles")}
                     >
                       分配角色
                     </Button>
-                    <Button type="link" onClick={() => open(u, "password")}>
+                    <Button
+                      type="link"
+                      disabled={!canManageUser(u)}
+                      onClick={() => open(u, "password")}
+                    >
                       重置密码
                     </Button>
                     <Button
                       type="link"
                       danger
-                      disabled={u.id === user?.id}
+                      disabled={u.id === user?.id || !canManageUser(u)}
                       onClick={() => confirmDelete(u)}
                     >
                       删除
@@ -437,6 +464,13 @@ export default function Permissions({ kind }: { kind: "roles" | "users" }) {
         )}
       </div>
       <Modal
+        width={action === "permissions" ? 760 : 520}
+        centered={action === "permissions"}
+        styles={
+          action === "permissions"
+            ? { body: { maxHeight: "calc(100dvh - 180px)", overflowY: "auto" } }
+            : undefined
+        }
         title={
           action === "permissions"
             ? "分配权限"
@@ -456,32 +490,61 @@ export default function Permissions({ kind }: { kind: "roles" | "users" }) {
       >
         {action === "permissions" ? (
           <>
-            <p className="mb-4 text-sm">
-              多个角色的启用权限合并生效；操作权限需同时选中对应菜单。
-            </p>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2,minmax(0,1fr))",
-                gap: 12,
-              }}
+            <p
+              className="mb-3 text-xs"
+              style={{ color: "var(--yp-neutral-500)" }}
             >
-              {catalog.data?.map((c) => (
-                <Checkbox
-                  key={c.key}
-                  checked={grants.includes(c.key)}
-                  onChange={(e) =>
-                    setGrants((previous) =>
-                      e.target.checked
-                        ? [...new Set([...previous, c.key])]
-                        : previous.filter((key) => key !== c.key),
-                    )
-                  }
-                >
-                  {c.label}
-                </Checkbox>
-              ))}
-            </div>
+              多角色权限合并生效；勾选操作自动选中查看，取消查看会取消对应操作。
+            </p>
+            <Table
+              size="small"
+              bordered
+              showHeader={false}
+              pagination={false}
+              rowKey="group"
+              dataSource={permissionGroups.map((group) => ({
+                group,
+                permissions:
+                  catalog.data?.filter((c) => c.group === group) || [],
+              }))}
+              columns={[
+                {
+                  title: "模块",
+                  dataIndex: "group",
+                  width: 105,
+                  render: (group: string) => (
+                    <span className="whitespace-nowrap font-medium">
+                      {group}
+                    </span>
+                  ),
+                },
+                {
+                  title: "权限",
+                  render: (_, row) => (
+                    <Space wrap size={[20, 4]}>
+                      {row.permissions.map((c) => (
+                        <Checkbox
+                          key={c.key}
+                          checked={grants.includes(c.key)}
+                          disabled={!owns(c.key)}
+                          onChange={(e) =>
+                            setGrants((previous) =>
+                              selectPermission(
+                                previous,
+                                c.key,
+                                e.target.checked,
+                              ),
+                            )
+                          }
+                        >
+                          {c.label}
+                        </Checkbox>
+                      ))}
+                    </Space>
+                  ),
+                },
+              ]}
+            />
           </>
         ) : (
           <Form form={form} layout="vertical">

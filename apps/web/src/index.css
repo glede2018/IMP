@@ -636,6 +636,35 @@ body {
   color: var(--yp-neutral-400) !important;
 }
 
+/* 搜索控件：覆盖通用按钮高度，输入框与搜索按钮始终等高。 */
+.ant-input-search { --yp-search-height: 38px; }
+.ant-input-search-small { --yp-search-height: 30px; }
+.ant-input-search-large { --yp-search-height: 46px; }
+.ant-input-search .ant-input,
+.ant-input-search .ant-input-affix-wrapper,
+.ant-input-search .ant-input-search-button {
+  height: var(--yp-search-height) !important;
+  box-sizing: border-box;
+}
+.ant-input-search .ant-input-affix-wrapper > .ant-input {
+  height: 100% !important;
+  padding-block: 0 !important;
+}
+.ant-input-search .ant-input-group > .ant-input,
+.ant-input-search .ant-input-group > .ant-input-affix-wrapper {
+  border-start-end-radius: 0 !important;
+  border-end-end-radius: 0 !important;
+}
+.ant-input-search .ant-input-search-button {
+  border-start-start-radius: 0 !important;
+  border-end-start-radius: 0 !important;
+}
+.yp-search-field { height: 38px !important; }
+.yp-search-field.ant-input-affix-wrapper > .ant-input {
+  height: 100% !important;
+  padding-block: 0 !important;
+}
+
 /* Statistic 统计数值 */
 .ant-statistic-title {
   color: var(--yp-neutral-500) !important;

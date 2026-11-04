@@ -4,13 +4,11 @@ import {
   App,
   Button,
   DatePicker,
-  Empty,
   Image,
   Input,
   Modal,
   Pagination,
   Popover,
-  Radio,
   Select,
   Space,
   Spin,
@@ -18,7 +16,7 @@ import {
   Tabs,
   Tag,
 } from "antd";
-import { UploadOutlined, SearchOutlined } from "@ant-design/icons";
+import { UploadOutlined } from "@ant-design/icons";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchMaterials, type Material } from "@/services/materials";
 import { remove, formatDate } from "@/services/api";
@@ -100,13 +98,13 @@ export default function Assets() {
   const client = useQueryClient();
   const [type, setType] = useState<Material["type"]>("product");
   const [keyword, setKeyword] = useState("");
+  const [searchText, setSearchText] = useState("");
   const [range, setRange] = useState<[string | undefined, string | undefined]>([
     undefined,
     undefined,
   ]);
   const [sort, setSort] = useState("newest");
   const [page, setPage] = useState(1);
-  const [view, setView] = useState("cards");
   const [editing, setEditing] = useState<Material | null | undefined>();
   const [preview, setPreview] = useState<Material | null>(null);
   const query = useQuery({
@@ -171,7 +169,13 @@ export default function Assets() {
   const title = (m: Material) => (
     <>
       <Space wrap>
-        <span className="font-medium">{m.name}</span>
+        <Button
+          type="link"
+          className="!p-0 font-medium"
+          onClick={() => setPreview(m)}
+        >
+          {m.name}
+        </Button>
         {m.isDefault && <Tag color="orange">默认</Tag>}
       </Space>
       <div className="text-xs mt-1" style={{ color: "var(--yp-neutral-500)" }}>
@@ -191,6 +195,7 @@ export default function Assets() {
           onChange={(key) => {
             setType(key as Material["type"]);
             setKeyword("");
+            setSearchText("");
             setRange([undefined, undefined]);
             setPage(1);
           }}
@@ -201,19 +206,25 @@ export default function Assets() {
         />
         <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
           <Space wrap>
-            <Input
-              prefix={<SearchOutlined />}
+            <Input.Search
               aria-label="搜索素材"
               placeholder={
                 type === "product"
-                  ? "搜索素材名称、标签、描述"
+                  ? "搜索素材名称、卖点、描述"
                   : "搜索人物素材名称"
               }
               allowClear
               style={{ width: 300 }}
-              value={keyword}
+              value={searchText}
               onChange={(e) => {
-                setKeyword(e.target.value);
+                setSearchText(e.target.value);
+                if (!e.target.value) {
+                  setKeyword("");
+                  setPage(1);
+                }
+              }}
+              onSearch={(value) => {
+                setKeyword(value.trim());
                 setPage(1);
               }}
             />
@@ -243,15 +254,6 @@ export default function Assets() {
               ]}
               style={{ width: 130 }}
             />
-            <Radio.Group
-              value={view}
-              onChange={(e) => setView(e.target.value)}
-              optionType="button"
-              options={[
-                { label: "卡片", value: "cards" },
-                { label: "列表", value: "table" },
-              ]}
-            />
           </Space>
           <Button
             type="primary"
@@ -271,7 +273,7 @@ export default function Assets() {
           <div className="p-12 text-center">
             <Spin />
           </div>
-        ) : view === "table" ? (
+        ) : (
           <Table<Material>
             rowKey="id"
             dataSource={query.data?.items}
@@ -311,6 +313,17 @@ export default function Assets() {
                 ),
                 width: 300,
               },
+              ...(type === "product"
+                ? [
+                    {
+                      title: "素材描述",
+                      dataIndex: "materialDescription",
+                      width: 220,
+                      ellipsis: true,
+                      render: (v: string) => v || "—",
+                    },
+                  ]
+                : []),
               ...(type === "person"
                 ? [
                     {
@@ -330,92 +343,6 @@ export default function Assets() {
                   ]),
               { title: "操作", render: (_, m) => actions(m), width: 140 },
             ]}
-          />
-        ) : query.data?.items.length ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {query.data.items.map((m) => (
-              <article
-                key={m.id}
-                className="yp-card overflow-hidden transition-shadow hover:shadow-md"
-              >
-                <div
-                  className="p-3"
-                  style={{
-                    background: "linear-gradient(120deg,#ffedd5,#fdba74)",
-                  }}
-                >
-                  <div className="mb-2">
-                    <Tag color="orange">
-                      {type === "product" ? "产品" : "人物"}
-                    </Tag>
-                    {m.isDefault && <Tag color="orange">默认</Tag>}
-                  </div>
-                  <Media material={m} large />
-                </div>
-                <div className="p-3">
-                  <button
-                    type="button"
-                    className="text-left mb-2"
-                    style={{
-                      border: 0,
-                      background: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      width: "100%",
-                    }}
-                    onClick={() => setPreview(m)}
-                  >
-                    {title(m)}
-                  </button>
-                  <div
-                    className="text-xs break-all mb-2"
-                    style={{ color: "var(--yp-neutral-400)" }}
-                  >
-                    ID: {m.id}
-                  </div>
-                  <p
-                    className="text-sm mb-3"
-                    style={{ color: "var(--yp-neutral-500)", minHeight: 40 }}
-                  >
-                    {m.description || "暂无简介"}
-                  </p>
-                  {type === "product" ? (
-                    <>
-                      <div
-                        className="mb-2 font-semibold"
-                        style={{ color: "var(--yp-primary-600)" }}
-                      >
-                        ¥{(m.priceCents / 100).toFixed(2)}
-                      </div>
-                      <div className="text-xs mb-2 text-gray-500">
-                        {m.categoryPath.join(" / ") || "未分类"}
-                      </div>
-                      <div className="flex flex-wrap mb-3">
-                        {m.tags.map((t) => (
-                          <Tag key={t} color="orange">
-                            {t}
-                          </Tag>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm mb-2">
-                        音色：{m.voiceName || "未配置"}
-                      </p>
-                      {m.generationStatus !== "ready" && (
-                        <Tag>参考图 · 待生成多角度</Tag>
-                      )}
-                    </>
-                  )}
-                  <div className="mt-3 text-right">{actions(m)}</div>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <Empty
-            description={`暂无${type === "product" ? "产品" : "人物"}素材`}
           />
         )}
         {!!query.data?.total && (
@@ -454,7 +381,15 @@ export default function Assets() {
         {preview && (
           <>
             <Media material={preview} />
-            <p className="mt-4">{preview.description}</p>
+            {preview.type === "product" && (
+              <p className="mt-4">
+                素材描述：{preview.materialDescription || "—"}
+              </p>
+            )}
+            <p className="mt-4">
+              {preview.type === "product" ? "素材卖点：" : "简介："}
+              {preview.description || "—"}
+            </p>
             <div className="mt-2">
               {preview.creatorName} · {formatDate(preview.createdAt)}
             </div>

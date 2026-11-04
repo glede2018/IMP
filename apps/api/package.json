@@ -3,43 +3,47 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "prisma generate && tsc && concurrently -k \"tsc --watch\" \"node --watch dist/main.js\"",
-    "build": "prisma generate && tsc -p tsconfig.json",
+    "dev": "node scripts/run-with-env.mjs prisma generate && tsc && concurrently -k \"tsc --watch\" \"node --watch dist/main.js\"",
+    "build": "node scripts/run-with-env.mjs prisma generate && tsc -p tsconfig.json",
     "start": "node dist/main.js",
-    "typecheck": "prisma generate && tsc --noEmit",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts",
-    "test": "tsx --test test/security.test.ts test/oauth.test.ts",
-    "test:integration": "tsx --test test/integration.test.ts test/oauth.integration.test.ts test/access.integration.test.ts test/materials.integration.test.ts test/categories.integration.test.ts",
-    "storage:init": "node scripts/init-storage.mjs"
+    "typecheck": "node scripts/run-with-env.mjs prisma generate && tsc --noEmit",
+    "db:generate": "node scripts/run-with-env.mjs prisma generate",
+    "db:migrate": "node scripts/run-with-env.mjs prisma migrate deploy",
+    "db:seed": "node dist/seed.js",
+    "test": "node scripts/test.mjs unit",
+    "test:integration": "node scripts/test.mjs integration",
+    "storage:init": "node scripts/init-storage.mjs",
+    "test:storage": "npm run build && node --import tsx --test test/storage.test.ts",
+    "storage:public-read": "node scripts/oss-public-read.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.750.0",
     "@nestjs/common": "^11.1.15",
     "@nestjs/core": "^11.1.15",
     "@nestjs/platform-express": "^11.1.15",
     "@nestjs/swagger": "^11.2.0",
     "@nestjs/throttler": "^6.4.0",
     "@prisma/client": "^6.5.0",
-    "@aws-sdk/client-s3": "^3.750.0",
+    "ali-oss": "^6.23.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
+    "file-type": "^22.1.1",
     "helmet": "^8.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "file-type": "^22.1.1"
+    "prisma": "^6.5.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "@types/express": "^5.0.0",
+    "@types/ali-oss": "^6.23.4",
     "@types/cookie-parser": "^1.4.8",
+    "@types/express": "^5.0.0",
     "@types/multer": "^1.4.12",
-    "prisma": "^6.5.0",
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.1.2",
     "tsx": "^4.19.3",
-    "typescript": "~5.6.3",
-    "concurrently": "^9.1.2"
+    "typescript": "~5.6.3"
   },
   "type": "module"
 }

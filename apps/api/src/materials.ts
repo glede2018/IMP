@@ -36,6 +36,9 @@ import { categoryPath, ensureDefaultCategory } from "./material-categories.js";
 import { Database } from "./database.js";
 import { Storage } from "./storage.js";
 import { SessionGuard, requireRole, AuthRequest } from "./auth.js";
+class MaterialUploadQuery {
+  @IsIn(["product", "person"]) type!: "product" | "person";
+}
 class MaterialQuery {
   @IsIn(["product", "person"]) type = "product";
   @IsOptional() @IsString() @Length(0, 120) q?: string;
@@ -50,16 +53,18 @@ class MaterialDto {
   @IsIn(["product", "person"]) type!: string;
   @IsString() @Length(1, 120) name!: string;
   @IsString() @Length(0, 500) description!: string;
+  @IsOptional() @IsString() @Length(0, 500) materialDescription?: string;
   @IsArray()
   @ArrayMaxSize(5)
   @IsString({ each: true })
   @Length(1, 60, { each: true })
   categoryPath!: string[];
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
   @Length(1, 40, { each: true })
-  tags!: string[];
+  tags: string[] = [];
   @IsInt() @Min(0) @Max(999999999) priceCents!: number;
   @IsArray()
   @ArrayMinSize(1)
@@ -73,13 +78,15 @@ const materialInclude = {
   files: { orderBy: { position: "asc" as const }, include: { asset: true } },
   voiceAsset: true,
 } as const;
-export const materialView = (
+export const materialView = async (
+  storage: Storage,
   m: Prisma.MaterialGetPayload<{ include: typeof materialInclude }>,
 ) => ({
   id: m.id,
   type: m.type,
   name: m.name,
   description: m.description,
+  materialDescription: m.materialDescription,
   categoryPath: m.categoryPath,
   categoryId: m.categoryId,
   tags: m.tags,
@@ -91,13 +98,15 @@ export const materialView = (
   generationStatus: m.generationStatus,
   voiceAssetId: m.voiceAssetId,
   voiceName: m.voiceAsset?.name,
-  files: m.files.map((f) => ({
-    id: f.assetId,
-    label: f.label,
-    mimeType: f.asset.mimeType,
-    size: f.asset.size,
-    url: `/api/v1/assets/${f.assetId}/file`,
-  })),
+  files: await Promise.all(
+    m.files.map(async (f) => ({
+      id: f.assetId,
+      label: f.label,
+      mimeType: f.asset.mimeType,
+      size: f.asset.size,
+      url: (await storage.links(f.asset)).preview,
+    })),
+  ),
 });
 @Controller("materials")
 @UseGuards(SessionGuard)
@@ -126,31 +135,11 @@ export class MaterialsController {
                 : [
                     { name: contains },
                     { description: contains },
-                    { tags: { hasSome: [q.q] } },
+                    { materialDescription: contains },
                   ],
           }
         : {}),
     };
-    // Tag matching includes partial matches, consistently with title and description search.
-    if (q.q && q.type === "product") {
-      const tagged = await this.db.material.findMany({
-        where: {
-          organizationId: req.user.organizationId,
-          type: "product",
-          deletedAt: null,
-        },
-        select: { id: true, tags: true },
-      });
-      where.OR!.push({
-        id: {
-          in: tagged
-            .filter((m) =>
-              m.tags.some((t) => t.toLowerCase().includes(q.q!.toLowerCase())),
-            )
-            .map((m) => m.id),
-        },
-      });
-    }
     const [items, total] = await this.db.$transaction([
       this.db.material.findMany({
         where,
@@ -165,27 +154,29 @@ export class MaterialsController {
       this.db.material.count({ where }),
     ]);
     return {
-      items: items.map(materialView),
+      items: await Promise.all(items.map((m) => materialView(this.storage, m))),
       total,
       page: q.page,
       pageSize: q.pageSize,
     };
   }
   @Get("voices") async voices(@Req() req: AuthRequest) {
-    return (
-      await this.db.asset.findMany({
-        where: {
-          organizationId: req.user.organizationId,
-          type: "voice",
-          mimeType: { startsWith: "audio/" },
-        },
-        orderBy: { createdAt: "asc" },
-      })
-    ).map((a) => ({
-      id: a.id,
-      name: a.name,
-      sampleUrl: `/api/v1/assets/${a.id}/file`,
-    }));
+    return Promise.all(
+      (
+        await this.db.asset.findMany({
+          where: {
+            organizationId: req.user.organizationId,
+            type: "voice",
+            mimeType: { startsWith: "audio/" },
+          },
+          orderBy: { createdAt: "asc" },
+        })
+      ).map(async (a) => ({
+        id: a.id,
+        name: a.name,
+        sampleUrl: (await this.storage.links(a)).preview,
+      })),
+    );
   }
   @Get("capabilities") capabilities() {
     return {
@@ -203,6 +194,7 @@ export class MaterialsController {
   )
   async file(
     @UploadedFile() file: Express.Multer.File,
+    @Query() query: MaterialUploadQuery,
     @Req() req: AuthRequest,
   ) {
     requireRole(req);
@@ -212,6 +204,7 @@ export class MaterialsController {
       file,
       req.user.organizationId,
       "image",
+      query.type,
     );
     try {
       const a = await this.db.asset.create({
@@ -224,7 +217,7 @@ export class MaterialsController {
       });
       return {
         id: a.id,
-        url: `/api/v1/assets/${a.id}/file`,
+        url: (await this.storage.links(a)).preview,
         mimeType: a.mimeType,
         size: a.size,
       };
@@ -384,6 +377,9 @@ export class MaterialsController {
         ...data,
         categoryId: selectedCategoryId,
         name: dto.name.trim(),
+        tags: [],
+        materialDescription:
+          dto.type === "product" ? (dto.materialDescription || "").trim() : "",
         voiceAssetId: dto.type === "person" ? dto.voiceAssetId : null,
         categoryPath: dto.type === "product" ? dto.categoryPath : [],
         priceCents: dto.type === "product" ? dto.priceCents : 0,
@@ -430,7 +426,7 @@ export class MaterialsController {
           entityId: m.id,
         },
       });
-      return materialView(m);
+      return materialView(this.storage, m);
     });
   }
   @Post() create(@Body() dto: MaterialDto, @Req() req: AuthRequest) {

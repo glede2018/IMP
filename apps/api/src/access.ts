@@ -33,6 +33,7 @@ import {
   permissionsFor,
   hasPermission,
   permissionCatalog,
+  permissionGroup,
 } from "./permissions.js";
 import { hashPassword } from "./security.js";
 class RoleDto {
@@ -84,7 +85,7 @@ export class AccessController {
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
   ) {
     return this.db.$transaction(async (tx) => {
-      // Serialize permission mutations per organization, including last administrator checks.
+      // 串行处理同组织权限变更，并在事务内复核当前操作者和最后一位管理员。
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${req.user.organizationId}))`;
       const actor = await tx.user.findUniqueOrThrow({
         where: { id: req.user.id },
@@ -106,7 +107,12 @@ export class AccessController {
           active: true,
           assignments: {
             some: {
-              role: { system: true, active: true, permissions: { has: "*" } },
+              role: {
+                organizationId: req.user.organizationId,
+                system: true,
+                active: true,
+                permissions: { has: "*" },
+              },
             },
           },
         },
@@ -189,7 +195,11 @@ export class AccessController {
       )
     )
       throw new ForbiddenException();
-    return permissionCatalog.map(([key, label]) => ({ key, label }));
+    return permissionCatalog.map(([key, label]) => ({
+      key,
+      label,
+      group: permissionGroup(key),
+    }));
   }
   @Get("roles") async roles(@Req() req: AuthRequest) {
     if (
@@ -246,12 +256,7 @@ export class AccessController {
     const known = new Set<string>(permissionCatalog.map(([key]) => key));
     if (dto.permissions.some((p) => !known.has(p)))
       throw new BadRequestException("权限项无效");
-    if (
-      !hasPermission(permissionsFor(req.user), "*") &&
-      dto.permissions.some((p) => !hasPermission(permissionsFor(req.user), p))
-    )
-      throw new ForbiddenException("不能分配超出自身范围的权限");
-    // Write capabilities always require the corresponding menu.
+    // 操作权限必须同时具有该模块的查看权限。
     if (
       dto.permissions.some(
         (p) => p.includes(":") && !dto.permissions.includes(p.split(":")[0]),
@@ -259,6 +264,12 @@ export class AccessController {
     )
       throw new BadRequestException("操作权限需要同时勾选对应菜单");
     return this.change(req, "role.permissions", id, async (tx) => {
+      // 以事务内重新加载的权限为准，避免等待期间权限被撤回后仍能越权授权。
+      if (
+        !hasPermission(permissionsFor(req.user), "*") &&
+        dto.permissions.some((p) => !hasPermission(permissionsFor(req.user), p))
+      )
+        throw new ForbiddenException("不能分配超出自身范围的权限");
       const r = await this.role(tx, id, req);
       if (r.system) throw new BadRequestException("系统角色拥有全部权限");
       if (
@@ -282,8 +293,15 @@ export class AccessController {
   ) {
     this.permit(req, "roles");
     return this.change(req, "role.delete", id, async (tx) => {
-      if ((await this.role(tx, id, req)).system)
-        throw new BadRequestException("系统角色不能删除");
+      const role = await this.role(tx, id, req);
+      if (role.system) throw new BadRequestException("系统角色不能删除");
+      if (
+        !hasPermission(permissionsFor(req.user), "*") &&
+        role.permissions.some(
+          (p) => !hasPermission(permissionsFor(req.user), p),
+        )
+      )
+        throw new ForbiddenException("不能管理权限高于自己的角色");
       if (await tx.userRole.count({ where: { roleId: id } }))
         throw new ConflictException("角色仍有用户，请先重新分配");
       await tx.accessRole.delete({ where: { id } });

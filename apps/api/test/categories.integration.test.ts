@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../load-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";

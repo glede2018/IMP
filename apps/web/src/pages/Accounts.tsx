@@ -12,7 +12,6 @@ import {
   message,
 } from "antd";
 import {
-  SearchOutlined,
   SlidersOutlined,
   PlayCircleOutlined,
   CaretRightOutlined,
@@ -30,19 +29,38 @@ import AccountDialog from "@/components/AccountDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { reportError } from "@/services/ui-api";
 import type { Account, AccountTier, Platform } from "@/types/ui";
+import douyinIcon from "@/assets/social/douyin.svg";
+import kuaishouIcon from "@/assets/social/kuaishou.svg";
+import xiaohongshuIcon from "@/assets/social/xiaohongshu.svg";
+import shipinhaoIcon from "@/assets/social/shipinghao.svg";
+import {
+  completeDouyinAuthorization,
+  douyinAuthorizationMessages,
+} from "@/services/douyin-authorization";
+
+const platformIcons: Record<Platform, string> = {
+  douyin: douyinIcon,
+  kuaishou: kuaishouIcon,
+  xiaohongshu: xiaohongshuIcon,
+  shipinhao: shipinhaoIcon,
+};
 
 /** 平台图标组件 */
-const PlatformIcon = ({ platform }: { platform: Platform }) => {
-  const color = platformColorMap[platform];
-  return (
-    <div
-      className="w-5 h-5 rounded flex items-center justify-center text-white"
-      style={{ background: color }}
-    >
-      <CaretRightOutlined style={{ fontSize: 10 }} />
-    </div>
-  );
-};
+const PlatformIcon = ({
+  platform,
+  size = 20,
+}: {
+  platform: Platform;
+  size?: number;
+}) => (
+  <img
+    src={platformIcons[platform]}
+    alt={platformMap[platform]}
+    width={size}
+    height={size}
+    style={{ objectFit: "contain", flexShrink: 0 }}
+  />
+);
 
 /** 粉丝数格式化：超过 1 万显示 X.Xw */
 function formatFans(fans?: number): string {
@@ -66,10 +84,16 @@ export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState("");
+  const [searchText, setSearchText] = useState("");
   const [platformFilter, setPlatformFilter] = useState<Platform | "">("");
   const [tierFilter, setTierFilter] = useState<AccountTier | "">("");
   const [unbindTarget, setUnbindTarget] = useState<Account | null>(null);
 
+  const urlQuery = searchParams.get("q") || "";
+  useEffect(() => {
+    setKeyword(urlQuery);
+    setSearchText(urlQuery);
+  }, [urlQuery]);
   const loadData = async () => {
     setLoading(true);
     try {
@@ -97,17 +121,9 @@ export default function Accounts() {
   useEffect(() => {
     const result = searchParams.get("douyin");
     if (!result) return;
-    const texts: Record<string, string> = {
-      connected: "抖音授权成功",
-      demo: "本地演示授权已完成（非真实抖音授权）",
-      cancelled: "已取消授权",
-      conflict: "该账号已绑定，或与原授权账号不同",
-      invalid: "授权请求已过期或不匹配，请重新发起",
-      failed: "抖音授权未完成，请重试并检查应用配置",
-      forbidden: "当前账号没有绑定权限",
-    };
-    const text = texts[result];
-    if (text) {
+    const completedInPopup = completeDouyinAuthorization(result);
+    const text = douyinAuthorizationMessages[result];
+    if (text && !completedInPopup) {
       if (result === "connected") message.success(text);
       else if (["demo", "cancelled"].includes(result)) message.info(text);
       else message.error(text);
@@ -303,12 +319,7 @@ export default function Accounts() {
           <div key={s.platform} className="yp-card p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div
-                  className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
-                  style={{ background: s.color }}
-                >
-                  <CaretRightOutlined />
-                </div>
+                <PlatformIcon platform={s.platform} size={40} />
                 <span
                   className="yp-font-semibold"
                   style={{ color: "var(--yp-neutral-900)" }}
@@ -403,14 +414,17 @@ export default function Accounts() {
               { value: "store_ip", label: "门店 IP" },
             ]}
           />
-          <Input
-            prefix={
-              <SearchOutlined style={{ color: "var(--yp-neutral-400)" }} />
-            }
+          <Input.Search
+            aria-label="搜索账号名称、ID"
             placeholder="搜索账号名称、ID"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            style={{ width: 224 }}
+            value={searchText}
+            allowClear
+            onChange={(e) => {
+              setSearchText(e.target.value);
+              if (!e.target.value) setKeyword("");
+            }}
+            onSearch={(value) => setKeyword(value.trim())}
+            style={{ width: 260 }}
           />
         </div>
         <Button icon={<SlidersOutlined />}>高级筛选</Button>
