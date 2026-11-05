@@ -194,6 +194,93 @@ test("Douyin OAuth: real database, official contract fixture, states, isolation,
       ).res.status,
       400,
     );
+    // 入白只请求专用权限，并保留会话隔离、过期和一次性校验。
+    const trial = await begin(cookies[0], { tier: "brand", mode: "trial" });
+    const trialState = trial.searchParams.get("state")!;
+    assert.equal(trial.searchParams.get("scope"), "trial.whitelist");
+    assert.equal(
+      trial.searchParams.get("redirect_uri"),
+      process.env.DOUYIN_REDIRECT_URI,
+    );
+    assert.match(
+      (await callback(trialState, "trial-code", cookies[1])).res.headers.get(
+        "location",
+      )!,
+      /douyin=invalid/,
+    );
+    assert.match(
+      (await callback(trialState, "trial-code", cookies[3])).res.headers.get(
+        "location",
+      )!,
+      /douyin=invalid/,
+    );
+    assert.match(
+      (await callback(trialState, "trial-code")).res.headers.get("location")!,
+      /douyin=trial_authorized/,
+    );
+    assert.equal(providerCalls.length, 0);
+    assert.equal(
+      await db.account.count({ where: { organizationId: orgA.id } }),
+      0,
+    );
+    assert.equal(
+      await db.accountAuthorization.count({
+        where: { account: { organizationId: orgA.id } },
+      }),
+      0,
+    );
+    assert.equal(
+      await db.auditLog.count({
+        where: {
+          organizationId: orgA.id,
+          action: "account.douyin.trial_authorized",
+        },
+      }),
+      1,
+    );
+    assert.match(
+      (await callback(trialState, "trial-code")).res.headers.get("location")!,
+      /douyin=invalid/,
+    );
+    const expiredTrial = await begin(cookies[0], {
+      tier: "brand",
+      mode: "trial",
+    });
+    await db.oAuthState.update({
+      where: { id: tokenHash(expiredTrial.searchParams.get("state")!) },
+      data: { expiresAt: new Date(0) },
+    });
+    assert.match(
+      (await callback(expiredTrial.searchParams.get("state")!)).res.headers.get(
+        "location",
+      )!,
+      /douyin=invalid/,
+    );
+    const cancelledTrial = await begin(cookies[0], {
+      tier: "brand",
+      mode: "trial",
+    });
+    assert.match(
+      (
+        await callback(
+          cancelledTrial.searchParams.get("state")!,
+          "",
+          cookies[0],
+          "access_denied",
+        )
+      ).res.headers.get("location")!,
+      /douyin=cancelled/,
+    );
+    assert.equal(
+      await db.auditLog.count({
+        where: {
+          organizationId: orgA.id,
+          action: "account.douyin.trial_authorized",
+        },
+      }),
+      1,
+    );
+    assert.equal(providerCalls.length, 0);
     const url = await begin();
     const state = url.searchParams.get("state")!;
     assert.equal(url.origin, "https://open.douyin.com");

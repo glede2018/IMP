@@ -1,6 +1,8 @@
 const popupKey = "imp-douyin-authorization-popup";
 export const douyinAuthorizationMessages: Record<string, string> = {
   connected: "抖音授权成功",
+  trial_authorized:
+    "已收到测试白名单授权回调，请在开放平台确认加入结果后，再点击抖音扫码授权绑定账号。",
   demo: "本地演示授权已完成（非真实抖音授权）",
   cancelled: "已取消授权",
   conflict: "该账号已绑定，或与原授权账号不同",

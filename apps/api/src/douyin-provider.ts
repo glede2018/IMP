@@ -124,13 +124,13 @@ export class DouyinProvider {
     if (!config.ready) throw new ServiceUnavailableException(config.reason);
     return config;
   }
-  authorizationUrl(state: string) {
+  authorizationUrl(state: string, purpose: "live" | "trial" = "live") {
     const config = this.ensureConfigured();
     const url = new URL("https://open.douyin.com/platform/oauth/connect/");
     url.search = new URLSearchParams({
       client_key: config.clientKey,
       response_type: "code",
-      scope: config.scopes.join(","),
+      scope: purpose === "trial" ? "trial.whitelist" : config.scopes.join(","),
       redirect_uri: config.redirectUri,
       state,
     }).toString();

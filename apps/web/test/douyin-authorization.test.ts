@@ -87,6 +87,11 @@ test("授权窗口完成后通知原页面；拦截、关闭和异常结果均�
     assert.equal(closed, true);
     assert(channels.every((channel) => channel.closed));
     assert.equal(completeDouyinAuthorization("connected"), false);
+    closed = false;
+    const trial = openDouyinAuthorization((result) => results.push(result));
+    trial.navigate("https://open.douyin.com/authorize?scope=trial.whitelist");
+    assert.equal(completeDouyinAuthorization("trial_authorized"), true);
+    assert.deepEqual(results, ["connected", "trial_authorized"]);
     assert.throws(
       () => authorization.navigate("https://open.douyin.com/authorize"),
       /已关闭/,

@@ -125,7 +125,8 @@ export default function Accounts() {
     const text = douyinAuthorizationMessages[result];
     if (text && !completedInPopup) {
       if (result === "connected") message.success(text);
-      else if (["demo", "cancelled"].includes(result)) message.info(text);
+      else if (["demo", "cancelled", "trial_authorized"].includes(result))
+        message.info(text, result === "trial_authorized" ? 8 : 3);
       else message.error(text);
     }
     const next = new URLSearchParams(searchParams);

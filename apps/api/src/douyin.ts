@@ -51,8 +51,8 @@ export class DouyinStartDto {
   @Length(1, 100)
   @ApiPropertyOptional()
   targetAccountId?: string;
-  @IsOptional() @IsIn(["live", "demo"]) @ApiPropertyOptional() mode:
-    "live" | "demo" = "live";
+  @IsOptional() @IsIn(["live", "demo", "trial"]) @ApiPropertyOptional() mode:
+    "live" | "demo" | "trial" = "live";
 }
 class DemoConfirmDto {
   @Matches(/^[a-f0-9]{64}$/) @ApiProperty() state!: string;
@@ -152,7 +152,7 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
     const config = douyinConfig();
     if (dto.mode === "demo" && !config.demoAvailable)
       throw new ForbiddenException("本地授权演示未启用");
-    if (dto.mode === "live") this.provider.ensureConfigured();
+    if (dto.mode !== "demo") this.provider.ensureConfigured();
     const raw = randomBytes(32).toString("hex");
     await this.db.$transaction([
       this.db.oAuthState.deleteMany({
@@ -182,14 +182,17 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
       authorizationUrl:
         dto.mode === "demo"
           ? `/api/v1/oauth/douyin/demo?state=${raw}`
-          : this.provider.authorizationUrl(raw),
+          : this.provider.authorizationUrl(
+              raw,
+              dto.mode === "trial" ? "trial" : "live",
+            ),
       mode: dto.mode,
     };
   }
   async state(
     req: AuthRequest,
     raw: string,
-    mode: string,
+    mode: string | string[],
     consume = false,
   ): Promise<OAuthState> {
     requireRole(req);
@@ -200,7 +203,7 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
       sessionId: this.sessionId(req),
       organizationId: req.user.organizationId,
       actorId: req.user.id,
-      mode,
+      mode: Array.isArray(mode) ? { in: mode } : mode,
       expiresAt: { gt: new Date() },
     };
     return this.db.$transaction(async (tx) => {
@@ -212,7 +215,7 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
     });
   }
   async callback(req: AuthRequest, raw: string, code?: string, error?: string) {
-    const state = await this.state(req, raw, "live", true);
+    const state = await this.state(req, raw, ["live", "trial"], true);
     if (error) return this.result("cancelled");
     if (!code || typeof code !== "string" || code.length > 2048)
       throw new BadRequestException("未收到有效的抖音授权码");
@@ -222,6 +225,18 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
       state.redirectUri !== config.redirectUri
     )
       throw new BadRequestException("应用配置已变更，请重新授权");
+    if (state.mode === "trial") {
+      // 入白授权与账号绑定独立，不获取用户资料或保存账号凭证。
+      await this.db.auditLog.create({
+        data: {
+          organizationId: req.user.organizationId,
+          actorId: req.user.id,
+          action: "account.douyin.trial_authorized",
+          entityId: config.clientKey,
+        },
+      });
+      return this.result("trial_authorized");
+    }
     const token = await this.provider.exchange(code);
     const profile = await this.provider.profile(
       token.accessToken,

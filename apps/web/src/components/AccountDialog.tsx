@@ -66,7 +66,7 @@ export default function AccountDialog({
       .then(setConfig)
       .catch((e) => message.error(e.message));
   }, [target, form, message]);
-  const authorize = async (mode: "live" | "demo") => {
+  const authorize = async (mode: "live" | "demo" | "trial") => {
     let popup: ReturnType<typeof openDouyinAuthorization> | undefined;
     try {
       setBusy(true);
@@ -74,7 +74,8 @@ export default function AccountDialog({
       popup = openDouyinAuthorization((result) => {
         const text = douyinAuthorizationMessages[result];
         if (result === "connected") message.success(text);
-        else if (["demo", "cancelled"].includes(result)) message.info(text);
+        else if (["demo", "cancelled", "trial_authorized"].includes(result))
+          message.info(text, result === "trial_authorized" ? 8 : 3);
         else message.error(text);
         if (["connected", "demo"].includes(result)) {
           onSaved();
@@ -166,6 +167,13 @@ export default function AccountDialog({
                   ? "重新授权"
                   : "抖音扫码授权"}
               </Button>
+              <Button
+                disabled={!config?.ready}
+                loading={busy}
+                onClick={() => void authorize("trial")}
+              >
+                加入测试白名单
+              </Button>
               {existing?.authorization?.mode === "live" && (
                 <Button loading={busy} onClick={() => void sync()}>
                   更新授权状态
@@ -191,9 +199,14 @@ export default function AccountDialog({
               : config?.reason || "正在检查抖音授权配置…"
           }
           description={
-            config?.demoAvailable
-              ? "本地演示不会连接抖音，也不会取得真实授权。"
-              : undefined
+            <Space direction="vertical" size={4}>
+              <span>
+                测试应用请先加入测试白名单，确认入白成功后，再扫码绑定账号。
+              </span>
+              {config?.demoAvailable && (
+                <span>本地演示不会连接抖音，也不会取得真实授权。</span>
+              )}
+            </Space>
           }
         />
       ) : (
