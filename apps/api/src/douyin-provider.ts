@@ -130,7 +130,10 @@ export class DouyinProvider {
     url.search = new URLSearchParams({
       client_key: config.clientKey,
       response_type: "code",
-      scope: purpose === "trial" ? "trial.whitelist" : config.scopes.join(","),
+      scope:
+        purpose === "trial"
+          ? "user_info,trial.whitelist"
+          : config.scopes.join(","),
       redirect_uri: config.redirectUri,
       state,
     }).toString();

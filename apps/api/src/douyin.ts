@@ -226,7 +226,11 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
     )
       throw new BadRequestException("应用配置已变更，请重新授权");
     if (state.mode === "trial") {
-      // 入白授权与账号绑定独立，不获取用户资料或保存账号凭证。
+      // 用授权码完成令牌交换并确认入白权限；仅收到回调不能视为授权成功。
+      const token = await this.provider.exchange(code);
+      if (!token.scopes.includes("trial.whitelist"))
+        return this.result("trial_not_granted");
+      // 入白与账号绑定独立，不读取用户资料或持久化本次令牌。
       await this.db.auditLog.create({
         data: {
           organizationId: req.user.organizationId,

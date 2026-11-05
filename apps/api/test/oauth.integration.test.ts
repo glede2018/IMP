@@ -80,7 +80,10 @@ test("Douyin OAuth: real database, official contract fixture, states, isolation,
         access_token: "act.fixture-secret",
         refresh_token: "rft.fixture-secret",
         open_id: subject,
-        scope: "user_info",
+        scope:
+          body.code === "trial-code"
+            ? "user_info,trial.whitelist"
+            : "user_info",
         expires_in: 1296000,
         refresh_expires_in: 2592000,
       };
@@ -194,10 +197,10 @@ test("Douyin OAuth: real database, official contract fixture, states, isolation,
       ).res.status,
       400,
     );
-    // 入白只请求专用权限，并保留会话隔离、过期和一次性校验。
+    // 入白联合请求基础权限，必须交换令牌后才能确认，仍保留一次性和会话隔离校验。
     const trial = await begin(cookies[0], { tier: "brand", mode: "trial" });
     const trialState = trial.searchParams.get("state")!;
-    assert.equal(trial.searchParams.get("scope"), "trial.whitelist");
+    assert.equal(trial.searchParams.get("scope"), "user_info,trial.whitelist");
     assert.equal(
       trial.searchParams.get("redirect_uri"),
       process.env.DOUYIN_REDIRECT_URI,
@@ -218,7 +221,7 @@ test("Douyin OAuth: real database, official contract fixture, states, isolation,
       (await callback(trialState, "trial-code")).res.headers.get("location")!,
       /douyin=trial_authorized/,
     );
-    assert.equal(providerCalls.length, 0);
+    assert.deepEqual(providerCalls, ["/oauth/access_token/"]);
     assert.equal(
       await db.account.count({ where: { organizationId: orgA.id } }),
       0,
@@ -280,7 +283,48 @@ test("Douyin OAuth: real database, official contract fixture, states, isolation,
       }),
       1,
     );
-    assert.equal(providerCalls.length, 0);
+    assert.equal(providerCalls.length, 1);
+    const missingTrial = await begin(cookies[0], {
+      tier: "brand",
+      mode: "trial",
+    });
+    assert.match(
+      (
+        await callback(
+          missingTrial.searchParams.get("state")!,
+          "no-trial-permission",
+        )
+      ).res.headers.get("location")!,
+      /douyin=trial_not_granted/,
+    );
+    const failedTrial = await begin(cookies[0], {
+      tier: "brand",
+      mode: "trial",
+    });
+    apiFailure = true;
+    assert.match(
+      (
+        await callback(failedTrial.searchParams.get("state")!, "trial-code")
+      ).res.headers.get("location")!,
+      /douyin=failed/,
+    );
+    apiFailure = false;
+    assert.equal(
+      await db.auditLog.count({
+        where: {
+          organizationId: orgA.id,
+          action: "account.douyin.trial_authorized",
+        },
+      }),
+      1,
+    );
+    assert.deepEqual(providerCalls, [
+      "/oauth/access_token/",
+      "/oauth/access_token/",
+      "/oauth/access_token/",
+    ]);
+    // 后续单独验证普通绑定，避免入白请求影响现有调用次数断言。
+    providerCalls.length = 0;
     const url = await begin();
     const state = url.searchParams.get("state")!;
     assert.equal(url.origin, "https://open.douyin.com");
