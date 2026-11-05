@@ -15,6 +15,11 @@ if (existsSync(target)) {
   writeFileSync(
     target,
     template
+      .replace(
+        "postgresql://db_user:replace_with_url_encoded_password@your-rds-host:5432/imp?schema=public",
+        "postgresql://imp:imp_local_password@localhost:55432/imp?schema=public",
+      )
+      .replace("STORAGE_PROVIDER=oss", "STORAGE_PROVIDER=s3")
       .replace("ChangeThisLocalPassword123!", password)
       .replace(
         "OAUTH_TOKEN_ENCRYPTION_KEY=",

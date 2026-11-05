@@ -17,11 +17,11 @@
     "db:generate": "npm run db:generate -w @imp/api",
     "db:migrate": "npm run db:migrate -w @imp/api",
     "db:seed": "npm run db:seed -w @imp/api",
-    "infra:up": "node scripts/compose.mjs up -d db storage && npm run storage:init",
-    "infra:down": "node scripts/compose.mjs down",
+    "infra:up": "node scripts/compose.mjs -f docker-compose.yml -f docker-compose.local.yml up -d db storage && npm run storage:init",
+    "infra:down": "node scripts/compose.mjs -f docker-compose.yml -f docker-compose.local.yml down",
     "format": "prettier --write \"apps/api/{src,prisma,test}/**/*.ts\" \"apps/web/src/**/*.{ts,tsx}\" \"*.json\" \"apps/*/*.json\" \"*.yml\" \"infra/*.conf\" --ignore-unknown",
     "storage:init": "npm run storage:init -w @imp/api",
-    "deploy:local": "node scripts/compose.mjs up --build -d"
+    "deploy:local": "node scripts/compose.mjs -f docker-compose.yml -f docker-compose.local.yml up --build -d"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
