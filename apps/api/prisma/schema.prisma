@@ -97,11 +97,15 @@ model Asset {
  createdAt DateTime @default(now())
  materialFiles MaterialFile[]
  materialVoices Material[] @relation("MaterialVoice")
+ productViews Material[] @relation("ProductView")
+ personViews Material[] @relation("PersonView")
  templateCovers Template[]
  works Work[]
  @@index([organizationId,type])
 }
 model Template {
+ active Boolean @default(true)
+ sourceTemplateId String?
  revision Int @default(1)
  id String @id @default(cuid())
  organizationId String
@@ -119,6 +123,7 @@ model Template {
  trackingTags TemplateTrackingTag[]
  creationDrafts VideoCreationDraft[]
  @@index([organizationId,category])
+ @@unique([organizationId,sourceTemplateId])
 }
 enum WorkStatus {
  draft
@@ -229,6 +234,12 @@ model UserRole {
 }
 
 model Material {
+ personViewAssetId String?
+ personViewAsset Asset? @relation("PersonView",fields:[personViewAssetId],references:[id],onDelete:Restrict)
+ personViewJobId String?
+ productViewAssetId String?
+ productViewAsset Asset? @relation("ProductView",fields:[productViewAssetId],references:[id],onDelete:Restrict)
+ productViewJobId String?
  materialDescription String @default("")
  id String @id @default(cuid())
  organizationId String
@@ -361,6 +372,9 @@ model DouyinSyncState {
 }
 
 model VideoCreationDraft {
+ nextPollAt DateTime @default(now())
+ remoteJobId String?
+ remoteAssets Json @default("{}")
  workflowSnapshot Json?
  nodeStates Json @default("{}")
  error String?
@@ -386,4 +400,26 @@ model VideoCreationDraft {
  @@index([status,leaseUntil])
  @@unique([organizationId,requestId])
  @@index([organizationId,createdAt])
+}
+
+model ModelGeneration {
+ purpose String @default("general")
+ id String @id @default(cuid())
+ organizationId String
+ creatorId String
+ materialId String
+ modelId String
+ requestId String
+ payload Json
+ referenceAssets Json @default("{}")
+ nextPollAt DateTime @default(now())
+ remoteJobId String?
+ status String @default("queued")
+ error String?
+ result Json @default("[]")
+ leaseUntil DateTime?
+ createdAt DateTime @default(now())
+ finishedAt DateTime?
+ @@unique([organizationId,requestId])
+ @@index([status,leaseUntil])
 }

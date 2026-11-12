@@ -4,6 +4,7 @@ import { lazy, type ReactNode } from "react";
 import MainLayout from "@/layouts/MainLayout";
 const Home = lazy(() => import("@/pages/Home"));
 const Accounts = lazy(() => import("@/pages/Accounts"));
+const TemplateCatalog = lazy(() => import("@/pages/TemplateCatalog"));
 const Templates = lazy(() => import("@/pages/Templates"));
 const MaterialCategories = lazy(() => import("@/pages/MaterialCategories"));
 const Tags = lazy(() => import("@/pages/Tags"));
@@ -93,6 +94,7 @@ export const router = createBrowserRouter([
       { path: "material-categories", element: <MaterialCategories /> },
       { path: "tags", element: <Tags /> },
       { path: "templates", element: <Templates /> },
+      { path: "template-catalog", element: <TemplateCatalog /> },
       { path: "works", element: <Works /> },
       { path: "video-editor", element: <VideoEditor /> },
       { path: "strategy/product-selection", element: <ProductSelection /> },

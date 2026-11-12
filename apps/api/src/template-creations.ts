@@ -3,6 +3,7 @@ import {
   selectedWorkflowMaterials,
   applyWorkflowSlots,
   stableSlotValues,
+  templateMaterialFiles,
 } from "./workflow-slots.js";
 import { WorkflowEngine } from "./workflow-engine.js";
 import {
@@ -81,6 +82,8 @@ export class TemplateCreationsController {
       include: { coverAsset: true },
     });
     if (!template) throw new NotFoundException("模板不存在");
+    if (!template.active)
+      throw new ConflictException("模板已下架，请选择其他模板");
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${req.user.organizationId + ":tags"}))`;
     const tag = `imp_${template.id}_v${template.revision}`.toLowerCase();
     const trackingTag = await tx.templateTrackingTag.upsert({
@@ -161,12 +164,17 @@ export class TemplateCreationsController {
         organizationId: req.user.organizationId,
         deletedAt: null,
         type,
+        ...(type === "product"
+          ? { productViewAssetId: { not: null } }
+          : { personViewAssetId: { not: null } }),
         ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
       },
-      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       take: 100,
       include: {
         files: { orderBy: { position: "asc" }, include: { asset: true } },
+        productViewAsset: true,
+        personViewAsset: true,
       },
     });
     return Promise.all(
@@ -176,9 +184,8 @@ export class TemplateCreationsController {
         description: r.description,
         materialDescription: r.materialDescription,
         type: r.type,
-        isDefault: r.isDefault,
         files: await Promise.all(
-          r.files.map(async (f) => ({
+          templateMaterialFiles(r).map(async (f) => ({
             id: f.asset.id,
             url: (await this.storage.links(f.asset)).preview,
             label: f.label,
@@ -268,6 +275,8 @@ export class TemplateCreationsController {
           deletedAt: null,
         },
         include: {
+          productViewAsset: { select: { id: true, mimeType: true } },
+          personViewAsset: { select: { id: true, mimeType: true } },
           files: {
             orderBy: { position: "asc" },
             include: { asset: { select: { id: true, mimeType: true } } },
@@ -281,10 +290,10 @@ export class TemplateCreationsController {
             (!selected &&
               m.type !==
                 (m.id === dto.personMaterialId ? "person" : "product")) ||
-            !m.files.length,
+            !templateMaterialFiles(m).length,
         )
       )
-        throw new BadRequestException("请选择有效的人物和产品素材");
+        throw new BadRequestException("请选择已生成三视图的人物和产品素材");
       const workflow = selected
         ? applyWorkflowSlots(selected, materials)
         : null;
@@ -324,7 +333,7 @@ export class TemplateCreationsController {
             description: m.description,
             materialDescription: m.materialDescription,
             voiceAssetId: m.voiceAssetId,
-            files: m.files.map((f) => ({
+            files: templateMaterialFiles(m).map((f) => ({
               assetId: f.asset.id,
               mimeType: f.asset.mimeType,
               label: f.label,
@@ -336,7 +345,7 @@ export class TemplateCreationsController {
         where: {
           id: {
             in: materials.flatMap((m) => [
-              ...m.files.map((f) => f.asset.id),
+              ...templateMaterialFiles(m).map((f) => f.asset.id),
               ...(m.voiceAssetId ? [m.voiceAssetId] : []),
             ]),
           },

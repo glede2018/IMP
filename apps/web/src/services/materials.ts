@@ -19,18 +19,22 @@ export interface Material {
   creatorName: string;
   createdAt: string;
   updatedAt: string;
-  isDefault: boolean;
   generationStatus: string;
-  voiceAssetId?: string;
-  voiceName?: string;
+  personViewAssetId?: string;
+  personViewJobId?: string;
+  personView?: MaterialFile | null;
+  productViewAssetId?: string;
+  productViewJobId?: string;
+  productView?: MaterialFile | null;
   files: MaterialFile[];
 }
-export interface Voice {
-  id: string;
-  name: string;
-  sampleUrl: string;
-}
 export interface MaterialInput {
+  viewModelId?: string;
+  viewParameters?: Record<string, unknown>;
+  viewRequestId?: string;
+  productViewModelId?: string;
+  productViewParameters?: Record<string, unknown>;
+  productViewRequestId?: string;
   type: Material["type"];
   name: string;
   description: string;
@@ -40,13 +44,10 @@ export interface MaterialInput {
   tags: string[];
   priceCents: number;
   fileIds: string[];
-  voiceAssetId?: string;
-  isDefault: boolean;
 }
 export const fetchMaterials = (
   params: Record<string, string | number | undefined>,
 ) => getPage<Material>("/materials", params);
-export const fetchVoices = () => request<Voice[]>("/materials/voices");
 export const saveMaterial = (data: MaterialInput, id?: string) =>
   save<Material>(`/materials${id ? `/${id}` : ""}`, data, id ? "PUT" : "POST");
 export interface MaterialCategory {

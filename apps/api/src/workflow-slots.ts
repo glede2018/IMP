@@ -37,6 +37,13 @@ export function selectedWorkflowMaterials(config: unknown, values: unknown) {
   };
 }
 
+// 模板只使用独立保存的三视图，禁止回退到上传原图。
+export function templateMaterialFiles(material: any): any[] {
+  const person = material.type === "person";
+  const asset = person ? material.personViewAsset : material.productViewAsset;
+  return asset ? [{ asset, label: person ? "人物三视图" : "产品三视图" }] : [];
+}
+
 // 每个槽位按节点 ID 替换；重复使用同一素材不会影响其他槽位和原始模板。
 export function applyWorkflowSlots(
   selection: NonNullable<ReturnType<typeof selectedWorkflowMaterials>>,
@@ -49,13 +56,15 @@ export function applyWorkflowSlots(
     const material = materials.find((m) => m.id === value.materialId);
     if (!material || material.type !== slot.materialType)
       throw new BadRequestException(`${slot.label}的素材类型不匹配或已删除`);
-    const file = material.files.find(
+    const file = templateMaterialFiles(material).find(
       (f: any) =>
         f.asset.mimeType.startsWith("image/") &&
         (!value.assetId || f.asset.id === value.assetId),
     );
     if (!file)
-      throw new BadRequestException(`${slot.label}请选择素材中的有效图片`);
+      throw new BadRequestException(
+        `${slot.label}请先生成${material.type === "person" ? "人物" : "产品"}三视图，并选择生成后的图片`,
+      );
     node.data.config = {
       media: { assetId: file.asset.id, type: "image", name: material.name },
     };

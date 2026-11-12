@@ -1,3 +1,9 @@
+import {
+  ModelGenerations,
+  ModelGenerationsController,
+} from "./model-generations.js";
+import { CreatKeyClient } from "./creatkey-client.js";
+import { CreatKeyTemplatesController } from "./creatkey-templates.js";
 import { appOrigins } from "./app-origins.js";
 import {
   WorkflowEngine,
@@ -118,6 +124,8 @@ class ErrorFilter implements ExceptionFilter {
     MaterialsController,
     WorkflowRunsController,
     AccessController,
+    ModelGenerationsController,
+    CreatKeyTemplatesController,
     HealthController,
     DouyinController,
     AuthController,
@@ -133,6 +141,8 @@ class ErrorFilter implements ExceptionFilter {
   providers: [
     WorkflowEngine,
     WorkflowProvider,
+    ModelGenerations,
+    CreatKeyClient,
     Database,
     DouyinProvider,
     DouyinService,

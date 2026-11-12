@@ -7,7 +7,7 @@ import { hashPassword } from "../src/security.js";
 import { fixtureAccess } from "./access-fixture.js";
 import { Storage } from "../dist/storage.js";
 const { createApp } = await import("../dist/app.js");
-test("material library: storage, validation, ordering, search, tenant default, soft deletion and immutable work snapshot", async () => {
+test("material library: storage, validation, ordering, search, tenant isolation, soft deletion and immutable work snapshot", async () => {
   const db = new PrismaClient();
   const app = await createApp();
   await app.listen(0, "127.0.0.1");
@@ -271,16 +271,6 @@ test("material library: storage, validation, ordering, search, tenant default, s
         .materialSnapshot[0].name,
       "草莓蛋糕",
     );
-    const voice = await db.asset.create({
-      data: {
-        organizationId: org.id,
-        type: "voice",
-        name: "温柔女声",
-        objectKey: randomUUID(),
-        mimeType: "audio/wav",
-        size: 1,
-      },
-    });
     const person = {
       type: "person",
       name: "小满",
@@ -290,17 +280,10 @@ test("material library: storage, validation, ordering, search, tenant default, s
       priceCents: 0,
       fileIds: [first.data.id],
       isDefault: false,
-      voiceAssetId: voice.id,
     };
     assert.equal(
-      (
-        await call(
-          "/materials",
-          "POST",
-          { ...person, voiceAssetId: undefined },
-          cookie,
-        )
-      ).status,
+      (await call("/materials", "POST", { ...person, fileIds: [] }, cookie))
+        .status,
       400,
     );
     const a = await call("/materials", "POST", person, cookie);
@@ -311,7 +294,7 @@ test("material library: storage, validation, ordering, search, tenant default, s
       cookie,
     );
     assert.equal(a.status, 201);
-    assert.equal(a.data.isDefault, true);
+    assert.equal(a.data.isDefault, undefined);
     assert.equal(b.status, 201);
     assert.equal(
       await db.material.count({
@@ -322,7 +305,7 @@ test("material library: storage, validation, ordering, search, tenant default, s
           deletedAt: null,
         },
       }),
-      1,
+      0,
     );
     assert.equal(
       (
@@ -333,18 +316,21 @@ test("material library: storage, validation, ordering, search, tenant default, s
           cookie,
         )
       ).status,
-      503,
+      404,
     );
     assert.equal(
-      (await call("/materials/capabilities", "GET", undefined, cookie)).data
-        .digitalHumanReady,
-      false,
+      (await call("/materials/capabilities", "GET", undefined, cookie)).status,
+      404,
+    );
+    assert.equal(
+      (await call("/materials/voices", "GET", undefined, cookie)).status,
+      404,
     );
     await call("/materials/" + b.data.id, "DELETE", undefined, cookie);
     assert.equal(
       (await db.material.findUniqueOrThrow({ where: { id: a.data.id } }))
         .isDefault,
-      true,
+      false,
     );
     assert.equal(
       (

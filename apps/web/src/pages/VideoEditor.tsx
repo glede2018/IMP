@@ -170,7 +170,6 @@ function CreationForm({ context }: { context: CreationContext }) {
     <div className="space-y-5">
       <div className="yp-page-header">
         <h1>AI 视频生成编辑</h1>
-        <p>选择人物、产品素材与视频标签，使用模板生成品牌宣传视频</p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <Card styles={{ body: { padding: 24 } }}>
@@ -236,24 +235,18 @@ function CreationForm({ context }: { context: CreationContext }) {
         </Card>
         <Card styles={{ body: { padding: 24 } }}>
           <h2 className="text-xl font-semibold m-0">生成配置</h2>
-          <p
-            className="text-sm mt-1 mb-5"
-            style={{ color: "var(--yp-neutral-500)" }}
-          >
-            选择素材，配置视频信息
-          </p>
           {!workflow && (
             <Space direction="vertical" size={16} className="w-full">
               <MaterialSlot
                 title="人物展示插槽"
-                description="选择人物形象，人物简介与音色将随生成配置保存"
+                description="选择人物三视图"
                 rows={person ? [person] : []}
                 onPick={() => setPicker("person")}
                 disabled={busy}
               />
               <MaterialSlot
                 title="产品展示插槽"
-                description="选择产品特写、细节图或多角度展示素材，最多 10 个产品"
+                description="最多选择 10 个产品素材"
                 rows={products}
                 onPick={() => setPicker("product")}
                 disabled={busy}
@@ -284,7 +277,7 @@ function CreationForm({ context }: { context: CreationContext }) {
                   <div key={slot.nodeId}>
                     <MaterialSlot
                       title={slot.label}
-                      description={`${slot.materialType === "product" ? "产品素材" : "人物素材"} · 替换节点输入图片`}
+                      description={`${slot.materialType === "product" ? "产品素材" : "人物素材"}`}
                       rows={
                         slotMaterials[slot.nodeId]
                           ? [slotMaterials[slot.nodeId]]
@@ -687,12 +680,6 @@ function MaterialPicker({
           {
             title: "素材名称",
             dataIndex: "name",
-            render: (name, m) => (
-              <Space>
-                {name}
-                {m.isDefault && <Tag color="orange">默认</Tag>}
-              </Space>
-            ),
           },
           {
             title: type === "product" ? "素材描述" : "简介",

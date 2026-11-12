@@ -1,3 +1,4 @@
+import { CreatKeyClient, CreatKeyConnectionError } from "./creatkey-client.js";
 import {
   Injectable,
   OnModuleInit,
@@ -97,6 +98,7 @@ export class WorkflowEngine implements OnModuleInit, OnModuleDestroy {
     private db: Database,
     private storage: Storage,
     private provider: WorkflowProvider,
+    private creatkey: CreatKeyClient,
   ) {}
   onModuleInit() {
     this.timer = setInterval(
@@ -109,6 +111,11 @@ export class WorkflowEngine implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
   availability(config: unknown) {
+    if (isWorkflow(config) && config.source === "creatkey-api")
+      return {
+        ready: this.creatkey.ready(),
+        reason: this.creatkey.ready() ? null : "尚未配置 CreatKey API",
+      };
     if (!isWorkflow(config))
       return { ready: false, reason: "该模板尚未导入可执行工作流" };
     if (
@@ -146,9 +153,10 @@ export class WorkflowEngine implements OnModuleInit, OnModuleDestroy {
       const row = await this.db.videoCreationDraft.findFirst({
         where: {
           status: { in: ["queued", "generating"] },
+          nextPollAt: { lte: new Date() },
           OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }],
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: { nextPollAt: "asc" },
       });
       if (!row) return;
       const claim = await this.db.videoCreationDraft.updateMany({
@@ -167,6 +175,13 @@ export class WorkflowEngine implements OnModuleInit, OnModuleDestroy {
       try {
         await this.advance(row);
       } catch (error) {
+        if (error instanceof CreatKeyConnectionError) {
+          await this.db.videoCreationDraft.update({
+            where: { id: row.id },
+            data: { error: error.message },
+          });
+          return;
+        }
         await this.db.videoCreationDraft.update({
           where: { id: row.id },
           data: {
@@ -181,7 +196,7 @@ export class WorkflowEngine implements OnModuleInit, OnModuleDestroy {
       } finally {
         await this.db.videoCreationDraft.update({
           where: { id: row.id },
-          data: { leaseUntil: null },
+          data: { leaseUntil: null, nextPollAt: new Date(Date.now() + 5000) },
         });
       }
     } finally {
@@ -189,6 +204,8 @@ export class WorkflowEngine implements OnModuleInit, OnModuleDestroy {
     }
   }
   private async advance(row: any) {
+    if (row.templateSnapshot?.config?.source === "creatkey-api")
+      return this.advanceRemote(row);
     const graph = row.workflowSnapshot as WorkflowDefinition;
     if (!graph?.nodes?.length) throw new Error("任务没有可执行工作流");
     const states = row.nodeStates as States;
@@ -329,6 +346,77 @@ export class WorkflowEngine implements OnModuleInit, OnModuleDestroy {
       data: { nodeStates: json(states), error: null },
     });
   }
+  private async advanceRemote(row: any) {
+    const config = row.templateSnapshot.config;
+    const assets = { ...row.remoteAssets };
+    if (!row.remoteJobId) {
+      for (const slot of config.slots) {
+        if (assets[slot.nodeId]) continue;
+        const node = row.workflowSnapshot.nodes.find(
+          (n: any) => n.id === slot.nodeId,
+        );
+        const assetId = node?.data.config.media?.assetId;
+        if (!assetId) throw new Error("槽位缺少参考图片");
+        const asset = await this.db.asset.findFirst({
+          where: {
+            id: assetId,
+            organizationId: row.organizationId,
+          },
+        });
+        if (!asset) throw new Error("槽位图片不存在");
+        assets[slot.nodeId] = (
+          await this.creatkey.upload(row.organizationId, asset)
+        ).id;
+        await this.db.videoCreationDraft.update({
+          where: { id: row.id },
+          data: {
+            remoteAssets: json(assets),
+            leaseUntil: new Date(Date.now() + 300000),
+          },
+        });
+      }
+      const job = await this.creatkey.request<any>(
+        "/template-jobs",
+        row.organizationId,
+        {
+          templateId: config.sourceTemplateId,
+          sourceHash: config.sourceHash,
+          slotValues: Object.fromEntries(
+            Object.entries(assets).map(([k, id]) => [k, { id }]),
+          ),
+        },
+        row.id,
+      );
+      row.remoteJobId = job.id;
+      await this.db.videoCreationDraft.update({
+        where: { id: row.id },
+        data: { remoteJobId: job.id },
+      });
+    }
+    const job = await this.creatkey.job(row.organizationId, row.remoteJobId);
+    if (["failed", "cancelled"].includes(job.status))
+      throw new Error(job.error || "CreatKey 视频生成失败");
+    await this.db.videoCreationDraft.update({
+      where: { id: row.id },
+      data: {
+        error: null,
+        nodeStates: json(
+          Object.fromEntries(
+            config.slots.map((s: any) => [
+              s.nodeId,
+              { status: job.status === "succeeded" ? "completed" : "pending" },
+            ]),
+          ),
+        ),
+      },
+    });
+    if (job.status !== "succeeded") return;
+    const videos = job.outputs.filter((a) => a.type === "video");
+    if (videos.length !== 1) throw new Error("CreatKey 必须返回唯一最终视频");
+    const file = await this.creatkey.download(videos[0].url, "video");
+    file.originalname = `${row.title}.mp4`;
+    await this.archive(row, file);
+  }
   private async complete(row: any, graph: WorkflowDefinition, states: States) {
     const final = graph.nodes.filter(
       (n) =>
@@ -371,6 +459,9 @@ export class WorkflowEngine implements OnModuleInit, OnModuleDestroy {
       mimetype: "video/mp4",
       originalname: `${row.title}.mp4`,
     } as Express.Multer.File;
+    await this.archive(row, file);
+  }
+  private async archive(row: any, file: Express.Multer.File) {
     const uploaded = await this.storage.upload(
       file,
       row.organizationId,

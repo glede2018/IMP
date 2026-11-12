@@ -61,6 +61,7 @@ export interface Asset {
   createdAt: string;
 }
 export interface Template {
+  active: boolean;
   id: string;
   title: string;
   description: string;

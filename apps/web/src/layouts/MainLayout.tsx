@@ -33,6 +33,7 @@ const contentCreationNav = {
   icon: <HighlightOutlined />,
   label: "内容创作",
   children: [
+    { key: "/template-catalog", label: "模板列表" },
     { key: "/templates", label: "模板市场" },
     { key: "/assets", label: "素材库" },
     { key: "/material-categories", label: "素材分类" },
@@ -60,6 +61,7 @@ const bottomNav = [
 /** 判断内容创作是否处于高亮状态 */
 function isContentCreationActive(pathname: string): boolean {
   return [
+    "/template-catalog",
     "/templates",
     "/assets",
     "/works",
@@ -83,6 +85,7 @@ const pageTitleMap: Record<string, string> = {
   "/": "系统首页",
   "/accounts": "账号管理",
   "/templates": "模板市场",
+  "/template-catalog": "模板列表",
   "/assets": "素材库",
   "/material-categories": "素材分类",
   "/works": "我的作品",

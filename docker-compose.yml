@@ -4,6 +4,8 @@ services:
     build:
       context: .
       target: api
+      args:
+        NODE_IMAGE: ${DOCKER_NODE_IMAGE:-node:22-alpine}
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -11,10 +13,9 @@ services:
       APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-loopback,uniquelocal}
-      WORKFLOW_PROVIDER_URL: ${WORKFLOW_PROVIDER_URL:-}
-      WORKFLOW_PROVIDER_KEY: ${WORKFLOW_PROVIDER_KEY:-}
-      WORKFLOW_MODEL_MAP: ${WORKFLOW_MODEL_MAP:-{}}
-      WORKFLOW_OUTPUT_HOSTS: ${WORKFLOW_OUTPUT_HOSTS:-}
+      CREATKEY_API_URL: ${CREATKEY_API_URL:-}
+      CREATKEY_API_KEY: ${CREATKEY_API_KEY:-}
+      CREATKEY_MEDIA_HOSTS: ${CREATKEY_MEDIA_HOSTS:-}
       SESSION_DAYS: ${SESSION_DAYS:-7}
       DOUYIN_CLIENT_KEY: ${DOUYIN_CLIENT_KEY:-}
       DOUYIN_CLIENT_SECRET: ${DOUYIN_CLIENT_SECRET:-}
@@ -63,6 +64,9 @@ services:
     build:
       context: .
       target: web
+      args:
+        NODE_IMAGE: ${DOCKER_NODE_IMAGE:-node:22-alpine}
+        NGINX_IMAGE: ${DOCKER_NGINX_IMAGE:-nginx:1.27-alpine}
     ports: ["127.0.0.1:8080:80"]
     depends_on:
       api: { condition: service_healthy }

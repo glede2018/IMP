@@ -1,5 +1,6 @@
 import type { UserInfo } from "@/types";
 export function menuKey(path: string) {
+  if (path === "/template-catalog") return "templates";
   if (path === "/material-categories") return "assets";
   if (path === "/") return "home";
   if (path.startsWith("/permissions/")) return path.split("/")[2];

@@ -1,3 +1,4 @@
+import ModelGenerationDialog from "@/components/ModelGenerationDialog";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -22,8 +23,6 @@ import { fetchMaterials, type Material } from "@/services/materials";
 import { remove, formatDate } from "@/services/api";
 import PageState from "@/components/PageState";
 import MaterialEditor from "@/components/MaterialEditor";
-const deletionText =
-  "确认删除该素材？删除后，历史已生成作品中引用的素材信息保留，新创作任务无法再选用该素材";
 function Media({
   material,
   large = false,
@@ -105,10 +104,16 @@ export default function Assets() {
   ]);
   const [sort, setSort] = useState("newest");
   const [page, setPage] = useState(1);
+  const [generating, setGenerating] = useState<Material>();
   const [editing, setEditing] = useState<Material | null | undefined>();
   const [preview, setPreview] = useState<Material | null>(null);
   const query = useQuery({
     queryKey: ["materials", type, keyword, ...range, sort, page],
+    // 仅产品视图生成期间更新状态，任务结束即停止。
+    refetchInterval: (q) =>
+      q.state.data?.items.some((m) => m.generationStatus === "generating")
+        ? 5000
+        : false,
     queryFn: () =>
       fetchMaterials({
         type,
@@ -153,6 +158,9 @@ export default function Assets() {
     });
   const actions = (m: Material) => (
     <Space size={12}>
+      <Button type="link" disabled={!canWrite} onClick={() => setGenerating(m)}>
+        生成三视图
+      </Button>
       <Button type="link" disabled={!canWrite} onClick={() => setEditing(m)}>
         编辑
       </Button>
@@ -176,7 +184,6 @@ export default function Assets() {
         >
           {m.name}
         </Button>
-        {m.isDefault && <Tag color="orange">默认</Tag>}
       </Space>
       <div className="text-xs mt-1" style={{ color: "var(--yp-neutral-500)" }}>
         {m.creatorName} · {formatDate(m.createdAt)}
@@ -187,7 +194,6 @@ export default function Assets() {
     <div className="space-y-6">
       <div className="yp-page-header">
         <h1>素材库</h1>
-        <p>统一管理视频创作所需的产品与人物素材</p>
       </div>
       <div className="yp-card p-5">
         <Tabs
@@ -302,16 +308,41 @@ export default function Assets() {
                   ]
                 : []),
               {
-                title: type === "person" ? "多角度图" : "素材预览图",
+                title: type === "person" ? "参考图" : "素材预览图",
                 render: (_, m) => (
                   <>
                     <Media material={m} />
-                    {type === "person" && m.generationStatus !== "ready" && (
-                      <Tag className="mt-2">参考图 · 待生成多角度</Tag>
-                    )}
                   </>
                 ),
                 width: 300,
+              },
+              {
+                title: type === "person" ? "人物三视图" : "产品三视图",
+                width: 180,
+                render: (_: unknown, m: Material) => {
+                  const view =
+                    m.type === "person" ? m.personView : m.productView;
+                  return view ? (
+                    <Image
+                      src={view.url}
+                      width={100}
+                      height={72}
+                      style={{ objectFit: "contain" }}
+                    />
+                  ) : (
+                    <Tag
+                      color={
+                        m.generationStatus === "failed" ? "error" : "default"
+                      }
+                    >
+                      {m.generationStatus === "generating"
+                        ? "生成中"
+                        : m.generationStatus === "failed"
+                          ? "生成失败，可重试"
+                          : "待生成"}
+                    </Tag>
+                  );
+                },
               },
               ...(type === "product"
                 ? [
@@ -324,24 +355,13 @@ export default function Assets() {
                     },
                   ]
                 : []),
-              ...(type === "person"
-                ? [
-                    {
-                      title: "音色",
-                      dataIndex: "voiceName",
-                      render: (v: string) => v || "未配置",
-                      width: 140,
-                    },
-                  ]
-                : [
-                    {
-                      title: "创建时间",
-                      dataIndex: "createdAt",
-                      render: formatDate,
-                      width: 180,
-                    },
-                  ]),
-              { title: "操作", render: (_, m) => actions(m), width: 140 },
+              {
+                title: "创建时间",
+                dataIndex: "createdAt",
+                render: formatDate,
+                width: 180,
+              },
+              { title: "操作", render: (_, m) => actions(m), width: 220 },
             ]}
           />
         )}
@@ -358,6 +378,15 @@ export default function Assets() {
           </div>
         )}
       </div>
+      {generating && (
+        <ModelGenerationDialog
+          material={generating}
+          onClose={() => setGenerating(undefined)}
+          onSaved={() =>
+            void client.invalidateQueries({ queryKey: ["materials"] })
+          }
+        />
+      )}
       {editing !== undefined && (
         <MaterialEditor
           key={`${type}-${editing?.id || "new"}`}
@@ -393,7 +422,6 @@ export default function Assets() {
             <div className="mt-2">
               {preview.creatorName} · {formatDate(preview.createdAt)}
             </div>
-            <p className="mt-2 text-xs text-gray-500">{deletionText}</p>
           </>
         )}
       </Modal>

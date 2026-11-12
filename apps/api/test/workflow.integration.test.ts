@@ -130,6 +130,7 @@ test("导入大于100KB的CreatKey文件，绑定槽位，隔离素材并保存�
         creatorName: user.name,
         name: "产品",
         type: "product",
+        productViewAssetId: asset.id,
         files: { create: { assetId: asset.id, position: 0 } },
       },
     });
@@ -240,7 +241,13 @@ test("导入大于100KB的CreatKey文件，绑定槽位，隔离素材并保存�
       where: { id: created.data.id },
       data: { status: "queued" },
     });
-    for (let i = 0; i < 5; i++) await engine.tick();
+    for (let i = 0; i < 5; i++) {
+      await db.videoCreationDraft.update({
+        where: { id: created.data.id },
+        data: { nextPollAt: new Date(0) },
+      });
+      await engine.tick();
+    }
     assert.equal(submissions, 1);
     assert.equal(polls, 1);
     const done = await db.videoCreationDraft.findUniqueOrThrow({

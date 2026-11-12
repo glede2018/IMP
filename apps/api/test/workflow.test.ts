@@ -98,6 +98,7 @@ test("按节点替换图片且固定原始文本，不污染模板；阻止素�
     {
       id: "p",
       type: "product",
+      productViewAsset: { id: "p2", mimeType: "image/png" },
       files: [
         { asset: { id: "p1", mimeType: "image/png" } },
         { asset: { id: "p2", mimeType: "image/png" } },
@@ -106,6 +107,7 @@ test("按节点替换图片且固定原始文本，不污染模板；阻止素�
     {
       id: "h",
       type: "person",
+      personViewAsset: { id: "h1", mimeType: "image/png" },
       files: [{ asset: { id: "h1", mimeType: "image/png" } }],
     },
   ];
@@ -128,8 +130,10 @@ test("按节点替换图片且固定原始文本，不污染模板；阻止素�
     () => applyWorkflowSlots(selection, materials.slice(1)),
     /类型不匹配/,
   );
+  selection.values.product.assetId = "p1";
+  assert.throws(() => applyWorkflowSlots(selection, materials), /产品三视图/);
   selection.values.product.assetId = "foreign";
-  assert.throws(() => applyWorkflowSlots(selection, materials), /有效图片/);
+  assert.throws(() => applyWorkflowSlots(selection, materials), /产品三视图/);
   assert.throws(() => selectedWorkflowMaterials(raw, {}), /槽位与当前模板/);
 });
 

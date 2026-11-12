@@ -1,3 +1,4 @@
+import { validateRemoteConfig } from "./creatkey-config.js";
 import { BadRequestException } from "@nestjs/common";
 
 export type WorkflowNode = {
@@ -31,6 +32,9 @@ export type WorkflowSlot = {
   field: "image";
 };
 export type WorkflowConfig = {
+  source?: "creatkey-api";
+  sourceTemplateId?: string;
+  sourceHash?: string;
   workflowFormat: "creatkey";
   definition: WorkflowDefinition;
   slots: WorkflowSlot[];
@@ -259,6 +263,7 @@ export function normalizeWorkflow(raw: any): WorkflowDefinition {
 }
 
 export function validateWorkflowConfig(value: any): WorkflowConfig {
+  if (value.source === "creatkey-api") return validateRemoteConfig(value);
   const definition = normalizeWorkflow(value.definition);
   const marked = definition.nodes.filter((n) => n.slot);
   if (!Array.isArray(value.slots)) fail("请配置全部图片槽位的素材类型");

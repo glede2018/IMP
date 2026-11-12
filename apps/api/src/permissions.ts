@@ -56,7 +56,9 @@ export function permissionsFor(user: AccessUser) {
   ];
 }
 export function moduleFor(path: string) {
-  const p = path.replace(/^\/api\/v1\//, "").split("/")[0];
+  let p = path.replace(/^\/api\/v1\//, "").split("/")[0];
+  if (p === "template-catalog") p = "templates";
+  if (p === "model-generations") p = "assets";
   return ["materials", "material-categories"].includes(p)
     ? "assets"
     : p === "oauth"

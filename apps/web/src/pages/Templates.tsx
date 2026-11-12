@@ -1,35 +1,28 @@
-import { importSlots } from "@/services/workflow";
 import { useEffect, useState } from "react";
 import {
   Alert,
-  App,
   Button,
   Card,
   Empty,
-  Form,
   Image,
   Input,
-  Modal,
   Pagination,
+  Popconfirm,
+  message,
   Select,
   Skeleton,
   Space,
   Tag,
-  Upload,
-  Steps,
-  Table,
 } from "antd";
-import type { UploadFile } from "antd";
 import {
+  PictureOutlined,
   PlusOutlined,
   SearchOutlined,
-  UploadOutlined,
-  PictureOutlined,
 } from "@ant-design/icons";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { categoryMap, getPage, request, save } from "@/services/api";
-import type { Asset, Template } from "@/types";
+import { categoryMap, getPage, save } from "@/services/api";
+import type { Template } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 type Row = Template & { cover?: string | null };
 export default function Templates() {
@@ -38,45 +31,73 @@ export default function Templates() {
     !!user &&
     (user.permissions.includes("*") ||
       user.permissions.includes("templates:create"));
+  const canManage =
+    !!user &&
+    (user.permissions.includes("*") ||
+      user.permissions.includes("templates:write"));
+  const queryClient = useQueryClient();
   const canUse =
     !!user &&
     (user.permissions.includes("*") ||
       ["works", "works:write", "assets"].every((key) =>
         user.permissions.includes(key),
       ));
+  const [marketStatus, setMarketStatus] = useState("active");
+  const availability = useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) =>
+      save(
+        `/templates/${encodeURIComponent(id)}/availability`,
+        { active },
+        "PATCH",
+      ),
+    onSuccess: (_data, vars) => {
+      message.success(vars.active ? "模板已上架" : "模板已下架");
+      void queryClient.invalidateQueries({ queryKey: ["template-market"] });
+    },
+    onError: (error: Error) => message.error(error.message),
+  });
   const [urlParams] = useSearchParams();
   const urlQuery = urlParams.get("q") || "";
-  const navigate = useNavigate(),
-    client = useQueryClient();
+  const navigate = useNavigate();
   const [search, setSearch] = useState(""),
     [keyword, setKeyword] = useState(""),
     [category, setCategory] = useState<string>(),
-    [page, setPage] = useState(1),
-    [open, setOpen] = useState(false);
+    [page, setPage] = useState(1);
   useEffect(() => {
     setSearch(urlQuery);
     setKeyword(urlQuery);
     setPage(1);
   }, [urlQuery]);
   const query = useQuery({
-    queryKey: ["template-market", keyword, category, page],
+    queryKey: [
+      "template-market",
+      keyword,
+      category,
+      page,
+      canManage ? marketStatus : "active",
+    ],
     queryFn: () =>
-      getPage<Row>("/templates", { q: keyword, category, page, pageSize: 12 }),
+      getPage<Row>("/templates", {
+        q: keyword,
+        category,
+        page,
+        pageSize: 12,
+        marketStatus: canManage ? marketStatus : "active",
+      }),
   });
   return (
     <div className="space-y-5">
       <div className="yp-page-header flex justify-between items-start gap-4">
         <div>
           <h1>模板市场</h1>
-          <p>浏览并选用适合烘焙门店场景的内容模板，生成品牌宣传视频</p>
         </div>
         <Button
           type="primary"
           icon={<PlusOutlined />}
           disabled={!canCreate}
-          onClick={() => setOpen(true)}
+          onClick={() => navigate("/template-catalog")}
         >
-          新增模板
+          导入模板
         </Button>
       </div>
       <Space wrap>
@@ -114,6 +135,22 @@ export default function Templates() {
             label,
           }))}
         />
+        {canManage && (
+          <Select
+            aria-label="模板上架状态"
+            value={marketStatus}
+            style={{ width: 140 }}
+            options={[
+              { value: "active", label: "上架中" },
+              { value: "inactive", label: "已下架" },
+              { value: "all", label: "全部状态" },
+            ]}
+            onChange={(value) => {
+              setMarketStatus(value);
+              setPage(1);
+            }}
+          />
+        )}
       </Space>
       {query.error && (
         <Alert
@@ -157,7 +194,10 @@ export default function Templates() {
               >
                 <div className="flex justify-between items-start gap-2 mb-2">
                   <h3 className="text-base font-semibold m-0">{t.title}</h3>
-                  <Tag color="orange">{categoryMap[t.category]}</Tag>
+                  <Space size={0}>
+                    <Tag color="orange">{categoryMap[t.category]}</Tag>
+                    {!t.active && <Tag>已下架</Tag>}
+                  </Space>
                 </div>
                 <p
                   className="text-sm mb-3"
@@ -168,15 +208,46 @@ export default function Templates() {
                 <Button
                   type="primary"
                   block
-                  disabled={!canUse}
+                  disabled={!canUse || !t.active}
                   onClick={() =>
                     navigate(
                       `/video-editor?templateId=${encodeURIComponent(t.id)}`,
                     )
                   }
                 >
-                  使用模板
+                  {t.active ? "使用模板" : "已下架"}
                 </Button>
+                {canManage && (
+                  <Popconfirm
+                    title={
+                      t.active ? "确认下架该模板？" : "确认重新上架该模板？"
+                    }
+                    description={
+                      t.active
+                        ? "下架后无法用于新创作，已有作品和已提交任务保留。"
+                        : "上架后可再次使用该模板创建视频。"
+                    }
+                    okText="确定"
+                    cancelText="取消"
+                    onConfirm={() =>
+                      availability
+                        .mutateAsync({ id: t.id, active: !t.active })
+                        .catch(() => undefined)
+                    }
+                  >
+                    <Button
+                      block
+                      danger={t.active}
+                      style={{ marginTop: 8 }}
+                      loading={
+                        availability.isPending &&
+                        availability.variables?.id === t.id
+                      }
+                    >
+                      {t.active ? "下架" : "重新上架"}
+                    </Button>
+                  </Popconfirm>
+                )}
               </Card>
             ))}
       </div>
@@ -195,328 +266,6 @@ export default function Templates() {
           />
         </div>
       )}
-      {open && (
-        <TemplateEditor
-          onCancel={() => setOpen(false)}
-          onSaved={async () => {
-            setOpen(false);
-            setPage(1);
-            await client.invalidateQueries({ queryKey: ["template-market"] });
-          }}
-        />
-      )}
     </div>
-  );
-}
-function TemplateEditor({
-  onCancel,
-  onSaved,
-}: {
-  onCancel: () => void;
-  onSaved: () => Promise<void>;
-}) {
-  const [form] = Form.useForm();
-  const { message } = App.useApp();
-  const [busy, setBusy] = useState(false);
-  const [step, setStep] = useState(0);
-  const [slotTypes, setSlotTypes] = useState<
-    Record<string, "product" | "person">
-  >({});
-  const [nodes, setNodes] = useState<ReturnType<typeof importSlots>>([]);
-  const submit = async () => {
-    const v = await form.validateFields();
-    if (step === 0) {
-      try {
-        const slots = importSlots(v.config);
-        setNodes(slots);
-        setSlotTypes({});
-        setStep(1);
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : "工作流无效");
-      }
-      return;
-    }
-    if (nodes.some((n) => !slotTypes[n.id])) {
-      message.warning("请选择每个槽位的素材来源");
-      return;
-    }
-    setBusy(true);
-    try {
-      const file = v.cover as File | undefined;
-      if (!file) throw new Error("请上传封面图片");
-      const data = new FormData();
-      data.append("file", file);
-      const cover = await request<Asset>("/templates/cover", {
-        method: "POST",
-        body: data,
-      });
-      await save("/templates", {
-        title: v.title.trim(),
-        description: v.description.trim(),
-        category: v.category,
-        config: {
-          workflowFormat: "creatkey",
-          definition: v.config,
-          slots: nodes.map((n) => ({
-            nodeId: n.id,
-            label: n.data.label,
-            materialType: slotTypes[n.id],
-          })),
-        },
-        coverAssetId: cover.id,
-        tags: [],
-      });
-      message.success("模板已新增");
-      await onSaved();
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : "新增失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Modal
-      open
-      title="新增模板"
-      width={step === 0 ? 600 : 800}
-      confirmLoading={busy}
-      closable={!busy}
-      maskClosable={!busy}
-      onCancel={() => {
-        if (!busy) onCancel();
-      }}
-      onOk={() => void submit().catch(() => undefined)}
-      okText={step === 0 ? "下一步：配置槽位" : "完成导入"}
-      cancelText="取消"
-    >
-      <Steps
-        size="small"
-        current={step}
-        className="!my-5"
-        items={[{ title: "导入模板" }, { title: "配置素材槽位" }]}
-      />
-      {step === 1 && (
-        <div className="space-y-4">
-          <Alert
-            type="info"
-            showIcon
-            message={`识别到 ${nodes.length} 个可替换槽位`}
-          />
-          <Table
-            rowKey="id"
-            pagination={false}
-            dataSource={nodes}
-            columns={[
-              {
-                title: "节点名称",
-                render: (_, n) => n.data.label,
-              },
-              {
-                title: "图片预览",
-                width: 120,
-                render: (_, n) => {
-                  const media = n.data.config.media as
-                    { url?: unknown } | undefined;
-                  const url = media?.url;
-                  if (
-                    n.data.kind !== "input.image" ||
-                    typeof url !== "string" ||
-                    !/^https?:\/\//i.test(url)
-                  )
-                    return "—";
-                  return (
-                    <Image
-                      src={url}
-                      alt={n.data.label}
-                      width={80}
-                      height={64}
-                      style={{ objectFit: "contain", borderRadius: 6 }}
-                    />
-                  );
-                },
-              },
-              {
-                title: "素材来源",
-                render: (_, n) => (
-                  <Select
-                    disabled={busy}
-                    aria-label={`${n.data.label}素材来源`}
-                    style={{ width: 190 }}
-                    placeholder="请选择素材来源"
-                    value={slotTypes[n.id]}
-                    onChange={(v) =>
-                      setSlotTypes((prev) => ({ ...prev, [n.id]: v }))
-                    }
-                    options={[
-                      { value: "product", label: "产品素材图片" },
-                      { value: "person", label: "人物素材图片" },
-                    ]}
-                  />
-                ),
-              },
-            ]}
-          />
-          <Button disabled={busy} onClick={() => setStep(0)}>
-            上一步
-          </Button>
-        </div>
-      )}
-      <Form
-        style={{ display: step === 0 ? undefined : "none" }}
-        form={form}
-        name="template-editor"
-        layout="horizontal"
-        labelCol={{ span: 5 }}
-        wrapperCol={{ span: 19 }}
-        className="!mt-6"
-        disabled={busy}
-      >
-        <Form.Item
-          name="title"
-          label="模板标题"
-          rules={[
-            { required: true, whitespace: true, message: "请输入模板标题" },
-            { max: 120 },
-          ]}
-        >
-          <Input maxLength={120} placeholder="请输入模板标题" />
-        </Form.Item>
-        <Form.Item
-          name="description"
-          label="模板简介"
-          rules={[
-            { required: true, whitespace: true, message: "请输入模板简介" },
-            { max: 500 },
-          ]}
-        >
-          <Input.TextArea
-            rows={3}
-            maxLength={500}
-            placeholder="请输入模板简介"
-          />
-        </Form.Item>
-        <Form.Item
-          name="category"
-          label="模板分类"
-          rules={[{ required: true, message: "请选择模板分类" }]}
-        >
-          <Select
-            placeholder="请选择模板分类"
-            options={Object.entries(categoryMap).map(([value, label]) => ({
-              value,
-              label,
-            }))}
-          />
-        </Form.Item>
-        <Form.Item
-          name="config"
-          label="JSON 文件"
-          rules={[{ required: true, message: "请上传有效的 JSON 文件" }]}
-          extra="支持.json 文件，最大 512 KB。"
-        >
-          <JsonUpload disabled={busy} />
-        </Form.Item>
-        <Form.Item
-          name="cover"
-          label="封面图片"
-          rules={[{ required: true, message: "请上传封面图片" }]}
-          extra="支持 JPG、PNG、WebP，单张不超过 3 MB，建议 16:9。"
-        >
-          <CoverUpload disabled={busy} />
-        </Form.Item>
-      </Form>
-    </Modal>
-  );
-}
-
-function JsonUpload({
-  disabled,
-  value,
-  onChange,
-}: {
-  disabled: boolean;
-  value?: Record<string, unknown>;
-  onChange?: (value: Record<string, unknown> | undefined) => void;
-}) {
-  const { message } = App.useApp();
-  const [files, setFiles] = useState<UploadFile[]>([]);
-  return (
-    <Upload.Dragger
-      accept=".json,application/json"
-      maxCount={1}
-      disabled={disabled}
-      fileList={value ? files : []}
-      onRemove={() => {
-        setFiles([]);
-        onChange?.(undefined);
-      }}
-      beforeUpload={async (file) => {
-        if (
-          !file.name.toLowerCase().endsWith(".json") ||
-          file.size > 512 * 1024
-        ) {
-          message.error("请上传不超过512 KB的 .json 文件");
-          return Upload.LIST_IGNORE;
-        }
-        try {
-          const config: unknown = JSON.parse(await file.text());
-          if (!config || Array.isArray(config) || typeof config !== "object")
-            throw new Error();
-          onChange?.(config as Record<string, unknown>);
-          setFiles([{ uid: file.uid, name: file.name, status: "done" }]);
-        } catch {
-          message.error("JSON 格式无效，请检查文件内容");
-        }
-        return Upload.LIST_IGNORE;
-      }}
-    >
-      <UploadOutlined /> 上传 JSON
-    </Upload.Dragger>
-  );
-}
-function CoverUpload({
-  disabled,
-  value,
-  onChange,
-}: {
-  disabled: boolean;
-  value?: File;
-  onChange?: (value: File | undefined) => void;
-}) {
-  const { message } = App.useApp();
-  const [files, setFiles] = useState<UploadFile[]>([]);
-  return (
-    <Upload.Dragger
-      accept="image/jpeg,image/png,image/webp"
-      maxCount={1}
-      listType="picture"
-      disabled={disabled}
-      fileList={value ? files : []}
-      onRemove={() => {
-        setFiles([]);
-        onChange?.(undefined);
-      }}
-      beforeUpload={(file) => {
-        if (
-          !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
-          file.size > 3 * 1024 * 1024
-        ) {
-          message.error("请选择不超过3 MB的 JPG、PNG 或 WebP 图片");
-          return Upload.LIST_IGNORE;
-        }
-        setFiles([
-          {
-            uid: file.uid,
-            name: file.name,
-            status: "done",
-            originFileObj: file,
-          },
-        ]);
-        onChange?.(file);
-        return false;
-      }}
-    >
-      <PictureOutlined /> 上传封面图
-    </Upload.Dragger>
   );
 }

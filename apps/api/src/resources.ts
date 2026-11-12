@@ -1,3 +1,4 @@
+import { IsBoolean, IsIn, IsOptional } from "class-validator";
 import { validateTemplateConfig } from "./workflow-definition.js";
 import { ApiCookieAuth, ApiConsumes, ApiBody } from "@nestjs/swagger";
 import {
@@ -377,6 +378,12 @@ export class AssetsController {
     return { success: true };
   }
 }
+class TemplatePageDto extends PageDto {
+  @IsOptional() @IsIn(["active", "inactive", "all"]) marketStatus?: string;
+}
+class TemplateAvailabilityDto {
+  @IsBoolean() active!: boolean;
+}
 @Controller("templates")
 @UseGuards(SessionGuard)
 @ApiCookieAuth()
@@ -386,8 +393,16 @@ export class TemplatesController {
     private ops: Operations,
     private storage: Storage,
   ) {}
-  @Get() async list(@Query() q: PageDto, @Req() req: AuthRequest) {
+  @Get() async list(@Query() q: TemplatePageDto, @Req() req: AuthRequest) {
+    const canManage = hasPermission(
+      permissionsFor(req.user),
+      "templates:write",
+    );
+    if (q.marketStatus && q.marketStatus !== "active" && !canManage)
+      throw new ForbiddenException("没有模板管理权限");
     const where = {
+      active:
+        q.marketStatus === "all" ? undefined : q.marketStatus !== "inactive",
       organizationId: req.user.organizationId,
       category: q.category,
       title: contains(q.q),
@@ -504,6 +519,29 @@ export class TemplatesController {
           revision: { increment: 1 },
           config: dto.config as Prisma.InputJsonObject,
         },
+      }),
+    );
+  }
+  @Patch(":id/availability") async availability(
+    @Param("id") id: string,
+    @Body() dto: TemplateAvailabilityDto,
+    @Req() req: AuthRequest,
+  ) {
+    requireRole(req);
+    if (
+      !(await this.db.template.findFirst({
+        where: { id, organizationId: req.user.organizationId },
+        select: { id: true },
+      }))
+    )
+      throw new NotFoundException("模板不存在");
+    return this.ops.change(
+      req,
+      dto.active ? "template.publish" : "template.unpublish",
+      id,
+      this.db.template.update({
+        where: { id, organizationId: req.user.organizationId },
+        data: { active: dto.active },
       }),
     );
   }

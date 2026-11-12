@@ -1,3 +1,11 @@
+import { stableSlotValues } from "./workflow-slots.js";
+import { randomUUID } from "node:crypto";
+import { CreatKeyClient } from "./creatkey-client.js";
+import {
+  productViewPayload,
+  viewJobField,
+  viewAssetField,
+} from "./product-views.js";
 import {
   Controller,
   UseGuards,
@@ -13,7 +21,6 @@ import {
   UploadedFile,
   BadRequestException,
   NotFoundException,
-  ServiceUnavailableException,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
@@ -29,6 +36,8 @@ import {
   Max,
   IsBoolean,
   IsISO8601,
+  IsObject,
+  IsUUID,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { Prisma } from "@prisma/client";
@@ -49,6 +58,12 @@ class MaterialQuery {
   @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize = 12;
 }
 class MaterialDto {
+  @IsOptional() @IsString() @Length(1, 100) viewModelId?: string;
+  @IsOptional() @IsObject() viewParameters?: Record<string, unknown>;
+  @IsOptional() @IsUUID() viewRequestId?: string;
+  @IsOptional() @IsString() @Length(1, 100) productViewModelId?: string;
+  @IsOptional() @IsObject() productViewParameters?: Record<string, unknown>;
+  @IsOptional() @IsUUID() productViewRequestId?: string;
   @IsOptional() @IsString() @Length(1, 100) categoryId?: string;
   @IsIn(["product", "person"]) type!: string;
   @IsString() @Length(1, 120) name!: string;
@@ -72,11 +87,12 @@ class MaterialDto {
   @IsString({ each: true })
   fileIds!: string[];
   @IsOptional() @IsString() @Length(1, 100) voiceAssetId?: string;
-  @IsBoolean() isDefault!: boolean;
+  @IsOptional() @IsBoolean() isDefault = false;
 }
 const materialInclude = {
   files: { orderBy: { position: "asc" as const }, include: { asset: true } },
-  voiceAsset: true,
+  productViewAsset: true,
+  personViewAsset: true,
 } as const;
 export const materialView = async (
   storage: Storage,
@@ -94,10 +110,29 @@ export const materialView = async (
   creatorName: m.creatorName,
   createdAt: m.createdAt,
   updatedAt: m.updatedAt,
-  isDefault: m.isDefault,
   generationStatus: m.generationStatus,
-  voiceAssetId: m.voiceAssetId,
-  voiceName: m.voiceAsset?.name,
+  personViewAssetId: m.personViewAssetId,
+  personViewJobId: m.personViewJobId,
+  personView: m.personViewAsset
+    ? {
+        id: m.personViewAsset.id,
+        mimeType: m.personViewAsset.mimeType,
+        size: m.personViewAsset.size,
+        label: "人物三视图",
+        url: (await storage.links(m.personViewAsset)).preview,
+      }
+    : null,
+  productViewAssetId: m.productViewAssetId,
+  productViewJobId: m.productViewJobId,
+  productView: m.productViewAsset
+    ? {
+        id: m.productViewAsset.id,
+        mimeType: m.productViewAsset.mimeType,
+        size: m.productViewAsset.size,
+        label: "产品三视图",
+        url: (await storage.links(m.productViewAsset)).preview,
+      }
+    : null,
   files: await Promise.all(
     m.files.map(async (f) => ({
       id: f.assetId,
@@ -114,6 +149,7 @@ export class MaterialsController {
   constructor(
     private db: Database,
     private storage: Storage,
+    private creatkey: CreatKeyClient,
   ) {}
   @Get() async list(@Query() q: MaterialQuery, @Req() req: AuthRequest) {
     if (q.from && q.to && new Date(q.from) > new Date(q.to))
@@ -160,32 +196,6 @@ export class MaterialsController {
       pageSize: q.pageSize,
     };
   }
-  @Get("voices") async voices(@Req() req: AuthRequest) {
-    return Promise.all(
-      (
-        await this.db.asset.findMany({
-          where: {
-            organizationId: req.user.organizationId,
-            type: "voice",
-            mimeType: { startsWith: "audio/" },
-          },
-          orderBy: { createdAt: "asc" },
-        })
-      ).map(async (a) => ({
-        id: a.id,
-        name: a.name,
-        sampleUrl: (await this.storage.links(a)).preview,
-      })),
-    );
-  }
-  @Get("capabilities") capabilities() {
-    return {
-      digitalHumanReady: false,
-      reason:
-        "尚未配置数字人引擎，请先保存参考形象；多角度生成需要接入服务商。",
-      referenceGenerationReady: false,
-    };
-  }
   @Post("files")
   @UseInterceptors(
     FileInterceptor("file", {
@@ -226,26 +236,6 @@ export class MaterialsController {
       throw e;
     }
   }
-  @Post(":id/generate") async generate(
-    @Param("id") id: string,
-    @Req() req: AuthRequest,
-  ) {
-    requireRole(req);
-    if (
-      !(await this.db.material.findFirst({
-        where: {
-          id,
-          organizationId: req.user.organizationId,
-          type: "person",
-          deletedAt: null,
-        },
-      }))
-    )
-      throw new NotFoundException("人物素材不存在");
-    throw new ServiceUnavailableException(
-      "尚未配置数字人引擎，不能生成多角度形象",
-    );
-  }
   private async persist(dto: MaterialDto, req: AuthRequest, id?: string) {
     requireRole(req);
     if (!dto.name.trim() || (dto.type === "product" && !dto.description.trim()))
@@ -254,18 +244,71 @@ export class MaterialsController {
       dto.type === "person" &&
       (dto.name.length > 30 ||
         dto.description.length > 100 ||
-        dto.fileIds.length !== 1 ||
-        !dto.voiceAssetId)
+        !dto.fileIds.length)
     )
       throw new BadRequestException(
-        "人物昵称不超过30字、简介不超过100字，需一张参考图和音色",
+        "人物昵称不超过30字、简介不超过100字，需上传1至10张参考图",
       );
     if (dto.type === "product" && !dto.categoryPath.length && !dto.categoryId)
       throw new BadRequestException("请选择类目，可选择未分类");
-    if (dto.type === "product" && dto.isDefault)
-      throw new BadRequestException("产品素材不能设为默认人物");
+    const generationModelId = dto.viewModelId || dto.productViewModelId;
+    const generationParameters =
+      dto.viewParameters || dto.productViewParameters || {};
+    const generationRequestId = dto.viewRequestId || dto.productViewRequestId;
+    const purpose = dto.type === "person" ? "person_views" : "product_views";
+    const jobField = viewJobField(purpose),
+      assetField = viewAssetField(purpose);
+    // 先验证模型与全部参考图，保存和生成任务在同一事务内提交。
+    const model = generationModelId
+      ? (
+          await this.creatkey.request<any[]>("/models", req.user.organizationId)
+        ).find((m) => m.id === generationModelId)
+      : null;
+    if (generationModelId && !model)
+      throw new BadRequestException("模型不存在或不可用");
+    const viewPayload = model
+      ? productViewPayload(model, dto.fileIds, generationParameters, dto.type)
+      : null;
     return this.db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${req.user.organizationId + ":materials"}))`;
+      if (viewPayload && generationRequestId) {
+        const saved = await tx.modelGeneration.findUnique({
+          where: {
+            organizationId_requestId: {
+              organizationId: req.user.organizationId,
+              requestId: generationRequestId,
+            },
+          },
+        });
+        if (saved) {
+          const material = await tx.material.findFirst({
+            where: {
+              id: saved.materialId,
+              organizationId: req.user.organizationId,
+              deletedAt: null,
+            },
+            include: materialInclude,
+          });
+          if (
+            saved.purpose !== purpose ||
+            saved.modelId !== generationModelId ||
+            !material ||
+            (id && material.id !== id) ||
+            material.name !== dto.name.trim() ||
+            material.description !== dto.description ||
+            material.materialDescription !==
+              (dto.type === "product"
+                ? (dto.materialDescription || "").trim()
+                : "") ||
+            material.priceCents !==
+              (dto.type === "product" ? dto.priceCents : 0) ||
+            (dto.categoryId && material.categoryId !== dto.categoryId) ||
+            stableSlotValues(saved.payload) !== stableSlotValues(viewPayload)
+          )
+            throw new BadRequestException("请求已提交，请刷新后重试");
+          return materialView(this.storage, material);
+        }
+      }
       let selectedCategoryId: string | null = null;
       if (dto.type === "product") {
         let rows = await tx.materialCategory.findMany({
@@ -294,6 +337,8 @@ export class MaterialsController {
         selectedCategoryId = selected.id;
         dto.categoryPath = categoryPath(rows, selected.id).map((p) => p.name);
       }
+      if (id)
+        await tx.$queryRaw`SELECT id FROM "Material" WHERE id=${id} AND "organizationId"=${req.user.organizationId} FOR UPDATE`;
       const old = id
         ? await tx.material.findFirst({
             where: {
@@ -328,59 +373,40 @@ export class MaterialsController {
         throw new BadRequestException(
           "仅支持单张不超过3MB的 JPG/PNG/WebP 图片",
         );
-      if (
-        dto.voiceAssetId &&
-        !(await tx.asset.findFirst({
-          where: {
-            id: dto.voiceAssetId,
-            organizationId: req.user.organizationId,
-            type: "voice",
-            mimeType: { startsWith: "audio/" },
-          },
-        }))
-      )
-        throw new BadRequestException("音色不存在，请配置音色列表");
-      if (
-        dto.type === "person" &&
-        !(await tx.material.count({
-          where: {
-            organizationId: req.user.organizationId,
-            type: "person",
-            deletedAt: null,
-          },
-        }))
-      )
-        dto.isDefault = true;
       await tx.asset.updateMany({
-        where: {
-          id: {
-            in: [
-              ...dto.fileIds,
-              ...(dto.voiceAssetId ? [dto.voiceAssetId] : []),
-            ],
-          },
-        },
+        where: { id: { in: dto.fileIds } },
         data: { retained: true },
       });
-      if (dto.isDefault)
-        await tx.material.updateMany({
-          where: {
-            organizationId: req.user.organizationId,
-            type: "person",
-            isDefault: true,
-            deletedAt: null,
-          },
-          data: { isDefault: false },
-        });
-      const { fileIds, ...data } = dto;
+      const {
+        viewModelId,
+        viewParameters,
+        viewRequestId,
+        fileIds,
+        voiceAssetId,
+        isDefault,
+        productViewModelId,
+        productViewParameters,
+        productViewRequestId,
+        ...data
+      } = dto;
+      const referencesChanged =
+        old &&
+        JSON.stringify(old.files.map((f) => f.assetId)) !==
+          JSON.stringify(fileIds);
       const fields = {
+        ...(referencesChanged
+          ? {
+              [assetField]: null,
+              [jobField]: null,
+              generationStatus: "reference",
+            }
+          : {}),
         ...data,
         categoryId: selectedCategoryId,
         name: dto.name.trim(),
         tags: [],
         materialDescription:
           dto.type === "product" ? (dto.materialDescription || "").trim() : "",
-        voiceAssetId: dto.type === "person" ? dto.voiceAssetId : null,
         categoryPath: dto.type === "product" ? dto.categoryPath : [],
         priceCents: dto.type === "product" ? dto.priceCents : 0,
       };
@@ -395,7 +421,8 @@ export class MaterialsController {
                   assetId,
                   position,
                   label:
-                    dto.type === "person" ? "参考图" : `主图${position + 1}`,
+                    old?.files.find((f) => f.assetId === assetId)?.label ||
+                    (dto.type === "person" ? "参考图" : `主图${position + 1}`),
                 })),
               },
             },
@@ -418,6 +445,40 @@ export class MaterialsController {
             },
             include: materialInclude,
           });
+      if (viewPayload) {
+        if (
+          old?.[jobField] &&
+          !referencesChanged &&
+          (await tx.modelGeneration.count({
+            where: {
+              id: old[jobField]!,
+              status: { in: ["queued", "running"] },
+            },
+          }))
+        )
+          throw new BadRequestException("三视图正在生成，请勿重复提交");
+        const job = await tx.modelGeneration.create({
+          data: {
+            organizationId: req.user.organizationId,
+            creatorId: req.user.id,
+            materialId: m.id,
+            modelId: generationModelId!,
+            requestId: generationRequestId || randomUUID(),
+            purpose,
+            payload: viewPayload as Prisma.InputJsonValue,
+          },
+        });
+        const queued = await tx.material.update({
+          where: { id: m.id },
+          data: {
+            [jobField]: job.id,
+            [assetField]: null,
+            generationStatus: "generating",
+          },
+          include: materialInclude,
+        });
+        Object.assign(m, queued);
+      }
       await tx.auditLog.create({
         data: {
           organizationId: req.user.organizationId,
@@ -452,23 +513,8 @@ export class MaterialsController {
       if (!m) throw new NotFoundException("素材不存在");
       await tx.material.update({
         where: { id },
-        data: { deletedAt: new Date(), isDefault: false },
+        data: { deletedAt: new Date() },
       });
-      if (m.isDefault) {
-        const next = await tx.material.findFirst({
-          where: {
-            organizationId: req.user.organizationId,
-            type: "person",
-            deletedAt: null,
-          },
-          orderBy: { createdAt: "asc" },
-        });
-        if (next)
-          await tx.material.update({
-            where: { id: next.id },
-            data: { isDefault: true },
-          });
-      }
       await tx.auditLog.create({
         data: {
           organizationId: req.user.organizationId,

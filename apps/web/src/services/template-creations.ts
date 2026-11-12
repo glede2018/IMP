@@ -22,7 +22,6 @@ export type PickMaterial = {
   description: string;
   materialDescription?: string;
   type: "person" | "product";
-  isDefault: boolean;
   files: { id: string; url: string; label: string; mimeType: string }[];
 };
 export const prepareCreation = (id: string) =>

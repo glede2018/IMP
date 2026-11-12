@@ -154,6 +154,16 @@ test("template creations: managed multiple tags, automatic identity, snapshots, 
       await db.materialFile.create({
         data: { materialId: m.id, assetId: asset.id, position: 0 },
       });
+      if (m.type === "product")
+        await db.material.update({
+          where: { id: m.id },
+          data: { productViewAssetId: asset.id },
+        });
+      if (m.type === "person")
+        await db.material.update({
+          where: { id: m.id },
+          data: { personViewAssetId: asset.id },
+        });
     }
     const dto = {
       title: "新品宣传视频",
