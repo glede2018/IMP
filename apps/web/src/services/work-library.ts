@@ -7,6 +7,7 @@ export interface LibraryWork {
   title: string;
   createdAt: string;
   taskStatus: WorkTaskStatus;
+  error: string | null;
   caption: string;
   publishTags: string[];
   materials: { id: string; name: string; type: "person" | "product" }[];

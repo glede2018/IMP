@@ -64,8 +64,8 @@ export function productViewPayload(
     throw new BadRequestException("模型参数无效");
   const settings: Record<string, unknown> = Object.fromEntries(
     parameterFields
-      .filter((f: any) => f.default !== undefined && f.default !== "")
-      .map((f: any) => [f.key, f.default]),
+      .map((f: any) => [f.key, f.defaultValue ?? f.default])
+      .filter(([, value]: any[]) => value != null && value !== ""),
   );
   Object.assign(settings, parameters);
   const negPort = model.inputs.find(
@@ -80,7 +80,9 @@ export function productViewPayload(
       field.required &&
       (settings[field.key] == null || settings[field.key] === "")
     )
-      throw new BadRequestException(`请填写${field.label}`);
+      throw new BadRequestException(
+        `模型参数${field.label || field.key}未配置默认值，请在 CreatKey 中配置`,
+      );
   }
   return {
     inputs: {

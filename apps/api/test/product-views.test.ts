@@ -129,3 +129,26 @@ test("人物和产品按实际图片数量区分单图与多图，禁止静默�
     }
   }
 });
+
+test("商品和人物使用模型默认参数，兼容 defaultValue 并保留 0 和 false", () => {
+  const m = {
+    ...model(),
+    fields: [
+      ...model().fields,
+      { key: "size", required: true, default: "small", defaultValue: "large" },
+      { key: "seed", required: true, defaultValue: 0 },
+      { key: "watermark", required: true, defaultValue: false },
+      { key: "quality", required: true, default: "high" },
+    ],
+  };
+  for (const type of ["product", "person"]) {
+    const payload = productViewPayload(m, ["a", "b"], {}, type);
+    assert.deepEqual(payload.parameters, {
+      num_images: 1,
+      size: "large",
+      seed: 0,
+      watermark: false,
+      quality: "high",
+    });
+  }
+});

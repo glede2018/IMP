@@ -1,14 +1,6 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-} from "antd";
+import { Alert, Button, Form, Select } from "antd";
 import { request } from "@/services/api";
 type Port = {
   id: string;
@@ -16,15 +8,7 @@ type Port = {
   multiple?: boolean;
   required?: boolean;
 };
-type Field = {
-  key: string;
-  label: string;
-  type: string;
-  required?: boolean;
-  default?: unknown;
-  maxItems?: number;
-  options?: { value: string | number; label: string }[];
-};
+type Field = { key: string; maxItems?: number };
 type Model = {
   id: string;
   name: string;
@@ -32,22 +16,6 @@ type Model = {
   outputs: Port[];
   fields: Field[];
 };
-const parameters = (model: Model) =>
-  model.fields.filter(
-    (f) =>
-      !model.inputs.some((p) => p.id === f.key) &&
-      !/negative|负面/.test(f.key) &&
-      ![
-        "n",
-        "num_images",
-        "num_outputs",
-        "model",
-        "url",
-        "endpoint",
-        "apiKey",
-        "authorization",
-      ].includes(f.key),
-  );
 export default function MaterialViewModelFields({
   imageCount,
   required,
@@ -77,7 +45,6 @@ export default function MaterialViewModelFields({
     // 图片数量跨越单图、多图时清空旧模型，避免沿用不匹配的输入配置。
     if (incompatible) {
       form.setFieldValue("viewModelId", undefined);
-      form.setFieldValue("viewParameters", {});
     }
   }, [incompatible, form]);
   const maxImages = (m: Model) => {
@@ -128,48 +95,11 @@ export default function MaterialViewModelFields({
             label: `${m.name}（最多 ${maxImages(m)} 张参考图）`,
             disabled: imageCount > maxImages(m),
           }))}
-          onChange={(id) => {
-            const selected = models.find((m) => m.id === id);
-            form.setFieldValue(
-              "viewParameters",
-              selected
-                ? Object.fromEntries(
-                    parameters(selected)
-                      .filter(
-                        (f) => f.default !== undefined && f.default !== "",
-                      )
-                      .map((f) => [f.key, f.default]),
-                  )
-                : {},
-            );
-          }}
         />
       </Form.Item>
       {!query.isLoading && !query.error && !models.length && (
         <Alert className="mb-3" type="info" message="暂无可用模型" />
       )}
-      {model &&
-        parameters(model).map((f) => (
-          <Form.Item
-            key={`${model.id}:${f.key}`}
-            name={["viewParameters", f.key]}
-            label={f.label}
-            rules={[{ required: f.required, message: `请填写${f.label}` }]}
-            valuePropName={f.type === "boolean" ? "checked" : "value"}
-          >
-            {f.type === "select" ? (
-              <Select options={f.options} />
-            ) : f.type === "number" ? (
-              <InputNumber style={{ width: "100%" }} />
-            ) : f.type === "boolean" ? (
-              <Checkbox />
-            ) : f.type === "textarea" ? (
-              <Input.TextArea rows={3} />
-            ) : (
-              <Input />
-            )}
-          </Form.Item>
-        ))}
     </>
   );
 }

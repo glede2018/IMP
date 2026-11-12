@@ -159,10 +159,10 @@ export default function Templates() {
           action={<Button onClick={() => void query.refetch()}>重试</Button>}
         />
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+      <div className="columns-1 gap-5 md:columns-2 xl:columns-3">
         {query.isPending
           ? Array.from({ length: 6 }, (_, i) => (
-              <Card key={i}>
+              <Card key={i} style={{ marginBottom: 20, breakInside: "avoid" }}>
                 <Skeleton active />
               </Card>
             ))
@@ -171,13 +171,15 @@ export default function Templates() {
                 key={t.id}
                 styles={{ body: { padding: 12 } }}
                 className="overflow-hidden"
+                style={{ marginBottom: 20, breakInside: "avoid" }}
                 cover={
                   t.cover ? (
                     <Image
                       src={t.cover}
                       alt={t.title}
                       preview={false}
-                      style={{ width: "100%", height: 180, objectFit: "cover" }}
+                      width="100%"
+                      style={{ height: "auto", display: "block" }}
                     />
                   ) : (
                     <div
@@ -193,15 +195,20 @@ export default function Templates() {
                 }
               >
                 <div className="flex justify-between items-start gap-2 mb-2">
-                  <h3 className="text-base font-semibold m-0">{t.title}</h3>
-                  <Space size={0}>
+                  <h3 className="text-base font-semibold m-0 min-w-0 break-words">
+                    {t.title}
+                  </h3>
+                  <Space size={0} wrap className="shrink-0">
                     <Tag color="orange">{categoryMap[t.category]}</Tag>
                     {!t.active && <Tag>已下架</Tag>}
                   </Space>
                 </div>
                 <p
                   className="text-sm mb-3"
-                  style={{ color: "var(--yp-neutral-500)", minHeight: 44 }}
+                  style={{
+                    color: "var(--yp-neutral-500)",
+                    overflowWrap: "anywhere",
+                  }}
                 >
                   {t.description}
                 </p>

@@ -3,12 +3,13 @@ import {
   Alert,
   App,
   Button,
+  Col,
   Form,
   Image,
   Input,
   Modal,
+  Row,
   Select,
-  Space,
   Table,
   Tag,
   Upload,
@@ -48,8 +49,7 @@ export default function TemplateCatalog() {
       ),
     retry: false,
   });
-  async function submit() {
-    const values = await form.validateFields();
+  async function submit(values: Record<string, unknown>) {
     setBusy(true);
     try {
       await request("/template-catalog/import", {
@@ -156,13 +156,24 @@ export default function TemplateCatalog() {
       <Modal
         title="导入模板市场"
         open={!!current}
-        width={720}
+        width={880}
+        centered
+        styles={{
+          body: { maxHeight: "calc(100dvh - 240px)", overflowY: "auto" },
+        }}
         onCancel={() => !busy && setCurrent(undefined)}
-        onOk={() => void submit()}
+        onOk={() => form.submit()}
         confirmLoading={busy}
         destroyOnClose
       >
-        <Form form={form} layout="vertical" preserve={false}>
+        <Form
+          form={form}
+          layout="vertical"
+          preserve={false}
+          disabled={busy}
+          onFinish={(values) => void submit(values)}
+          scrollToFirstError={{ block: "center", focus: true }}
+        >
           <Form.Item
             name="title"
             label="模板标题"
@@ -185,40 +196,76 @@ export default function TemplateCatalog() {
               }))}
             />
           </Form.Item>
-          <Space align="start" className="mb-4">
-            {current?.cover && <Image width={130} src={current.cover.url} />}
-            <Form.Item name="coverAssetId" label="模板封面">
+          <div className="flex flex-wrap items-start gap-4 mb-4">
+            {current?.cover && (
+              <Image
+                width={130}
+                height={96}
+                style={{ objectFit: "cover" }}
+                src={current.cover.url}
+              />
+            )}
+            <Form.Item
+              name="coverAssetId"
+              label="模板封面"
+              className="min-w-0 flex-1"
+            >
               <CoverInput disabled={busy} />
             </Form.Item>
-          </Space>
-          {current?.slots.map((s) => (
-            <Space key={s.id} align="start" className="flex mb-2">
-              {s.preview ? (
-                <Image
-                  width={96}
-                  height={80}
-                  style={{ objectFit: "cover" }}
-                  src={s.preview}
-                />
-              ) : (
-                <span>暂无预览</span>
-              )}
-              <Form.Item
-                name={["slotTypes", s.id]}
-                label={s.label}
-                rules={[{ required: true, message: "请选择素材类型" }]}
-              >
-                <Select
-                  style={{ width: 220 }}
-                  placeholder="选择素材类型"
-                  options={[
-                    { value: "product", label: "产品素材" },
-                    { value: "person", label: "人物素材" },
-                  ]}
-                />
-              </Form.Item>
-            </Space>
-          ))}
+          </div>
+          <Row gutter={[20, 16]}>
+            {current?.slots.map((s) => (
+              <Col key={s.id} xs={24} md={12} className="min-w-0">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="shrink-0" style={{ width: 96, height: 80 }}>
+                    {s.preview ? (
+                      <Image
+                        width={96}
+                        height={80}
+                        style={{ objectFit: "cover" }}
+                        src={s.preview}
+                      />
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-xs text-gray-400">
+                        暂无预览
+                      </div>
+                    )}
+                  </div>
+                  <Form.Item
+                    name={["slotTypes", s.id]}
+                    label={
+                      <span
+                        title={s.label}
+                        style={{
+                          whiteSpace: "normal",
+                          overflowWrap: "anywhere",
+                          display: "-webkit-box",
+                          WebkitBoxOrient: "vertical",
+                          WebkitLineClamp: 2,
+                          overflow: "hidden",
+                          lineHeight: "22px",
+                          height: 44,
+                        }}
+                      >
+                        {s.label}
+                      </span>
+                    }
+                    className="min-w-0 flex-1 !mb-0"
+                    rules={[{ required: true, message: "请选择素材类型" }]}
+                  >
+                    <Select
+                      className="w-full"
+                      placeholder="选择素材类型"
+                      options={[
+                        { value: "product", label: "产品素材" },
+                        { value: "person", label: "人物素材" },
+                      ]}
+                    />
+                  </Form.Item>
+                </div>
+              </Col>
+            ))}
+          </Row>
         </Form>
       </Modal>
     </div>

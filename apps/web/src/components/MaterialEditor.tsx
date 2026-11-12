@@ -23,7 +23,6 @@ import {
 } from "@/services/materials";
 interface Values {
   viewModelId?: string;
-  viewParameters?: Record<string, unknown>;
   name: string;
   description?: string;
   categoryPath?: string[];
@@ -94,7 +93,7 @@ export default function MaterialEditor({
           ...(v.viewModelId
             ? {
                 viewModelId: v.viewModelId,
-                viewParameters: v.viewParameters || {},
+                viewParameters: {},
                 viewRequestId: viewRequestId.current,
               }
             : {}),

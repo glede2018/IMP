@@ -327,11 +327,28 @@ export default function Works() {
             },
             {
               title: "任务状态",
-              width: 130,
+              width: 240,
               render: (_, w) => (
-                <Tag color={statusMap[w.taskStatus]?.color || "default"}>
-                  {statusMap[w.taskStatus]?.label || "待确认"}
-                </Tag>
+                <div>
+                  <Tag color={statusMap[w.taskStatus]?.color || "default"}>
+                    {statusMap[w.taskStatus]?.label || "待确认"}
+                  </Tag>
+                  {w.taskStatus === "failed" && (
+                    <Typography.Paragraph
+                      type="danger"
+                      className="!mb-0 mt-2 text-xs"
+                      style={{
+                        maxWidth: 220,
+                        whiteSpace: "pre-wrap",
+                        overflowWrap: "anywhere",
+                      }}
+                      ellipsis={{ rows: 2, expandable: true, symbol: "展开" }}
+                      copyable
+                    >
+                      {w.error || "任务失败，未记录具体原因"}
+                    </Typography.Paragraph>
+                  )}
+                </div>
               ),
             },
             {

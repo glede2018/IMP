@@ -60,6 +60,7 @@ interface LibraryRow {
   title: string;
   createdAt: Date;
   taskStatus: string;
+  error: string | null;
   caption: string;
   publishTags: string[];
   materials: ReturnType<typeof materialSnapshot>;
@@ -170,6 +171,7 @@ export class WorksLibraryController {
             title: w.title,
             createdAt: w.createdAt,
             taskStatus: "completed",
+            error: null,
             caption: w.caption,
             publishTags: w.publishTags,
             materials: materialSnapshot(w.materialSnapshot),
@@ -200,6 +202,10 @@ export class WorksLibraryController {
           title: d.title,
           createdAt: d.createdAt,
           taskStatus: d.status,
+          error:
+            d.status === "failed"
+              ? d.error?.trim() || "任务失败，未记录具体原因"
+              : null,
           caption: "",
           publishTags: d.publishTags,
           materials: materialSnapshot(d.materialSnapshot),

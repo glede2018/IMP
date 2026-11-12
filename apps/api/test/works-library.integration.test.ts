@@ -298,6 +298,42 @@ test("work library: historical filters, task/complete dedup, caption/hashtags, t
         .status,
       403,
     );
+    // 失败原因随作品列表返回；完成和未失败的任务不暴露旧错误。
+    const failure = "模型节点：生成视频\n供应商返回：余额不足，无法启动任务";
+    await db.videoCreationDraft.update({
+      where: { id: awaiting.id },
+      data: { status: "failed", error: failure },
+    });
+    const failed = await call(
+      "/works/library?status=failed",
+      "GET",
+      undefined,
+      read,
+    );
+    assert.equal(failed.data.total, 1);
+    assert.equal(failed.data.items[0].id, awaiting.id);
+    assert.equal(failed.data.items[0].error, failure);
+    assert.equal(work.error, null);
+    await db.videoCreationDraft.update({
+      where: { id: awaiting.id },
+      data: { error: "  " },
+    });
+    assert.equal(
+      (await call("/works/library?status=failed", "GET", undefined, read)).data
+        .items[0].error,
+      "任务失败，未记录具体原因",
+    );
+    await db.videoCreationDraft.update({
+      where: { id: awaiting.id },
+      data: { status: "awaiting_provider", error: failure },
+    });
+    const reset = await call(
+      "/works/library?status=awaiting_provider",
+      "GET",
+      undefined,
+      read,
+    );
+    assert.equal(reset.data.items[0].error, null);
     assert.equal((await call("/works/library")).status, 401);
   } finally {
     for (const organizationId of [org.id, foreign.id]) {

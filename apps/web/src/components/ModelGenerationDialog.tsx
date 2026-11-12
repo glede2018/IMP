@@ -80,7 +80,7 @@ export default function ModelGenerationDialog({
             materialId: material.id,
             modelId: values.viewModelId,
             requestId: requestId.current,
-            parameters: values.viewParameters || {},
+            parameters: {},
           }),
         },
       );
