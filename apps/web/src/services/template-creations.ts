@@ -12,7 +12,6 @@ export type PublishTag = {
 };
 export type CreationContext = {
   template: CreationTemplate;
-  trackingTag: PublishTag;
   tags: PublishTag[];
   execution?: { ready: boolean; reason: string | null };
 };

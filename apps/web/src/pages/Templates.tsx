@@ -1,17 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
   Card,
   Empty,
+  Grid,
   Image,
   Input,
-  Pagination,
   Popconfirm,
   message,
   Select,
   Skeleton,
   Space,
+  Spin,
   Tag,
 } from "antd";
 import {
@@ -19,7 +20,11 @@ import {
   PlusOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { categoryMap, getPage, save } from "@/services/api";
 import type { Template } from "@/types";
@@ -61,30 +66,72 @@ export default function Templates() {
   const navigate = useNavigate();
   const [search, setSearch] = useState(""),
     [keyword, setKeyword] = useState(""),
-    [category, setCategory] = useState<string>(),
-    [page, setPage] = useState(1);
+    [category, setCategory] = useState<string>();
+  const screens = Grid.useBreakpoint();
+  const columnCount = screens.xl
+    ? 5
+    : screens.lg
+      ? 4
+      : screens.md
+        ? 3
+        : screens.sm
+          ? 2
+          : 1;
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setSearch(urlQuery);
     setKeyword(urlQuery);
-    setPage(1);
   }, [urlQuery]);
-  const query = useQuery({
+  const query = useInfiniteQuery({
     queryKey: [
       "template-market",
+      "infinite",
       keyword,
       category,
-      page,
       canManage ? marketStatus : "active",
     ],
-    queryFn: () =>
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
       getPage<Row>("/templates", {
         q: keyword,
         category,
-        page,
-        pageSize: 12,
+        page: pageParam,
+        pageSize: 20,
         marketStatus: canManage ? marketStatus : "active",
       }),
+    getNextPageParam: (lastPage) =>
+      lastPage.items.length &&
+      lastPage.page * lastPage.pageSize < lastPage.total
+        ? lastPage.page + 1
+        : undefined,
   });
+  const { fetchNextPage, hasNextPage, isFetching, isFetchNextPageError } =
+    query;
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || !hasNextPage || isFetching || isFetchNextPageError) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting))
+          void fetchNextPage({ cancelRefetch: false });
+      },
+      { rootMargin: "300px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetching, isFetchNextPageError]);
+  const templates = [
+    ...new Map(
+      (query.data?.pages.flatMap((page) => page.items) || []).map((t) => [
+        t.id,
+        t,
+      ]),
+    ).values(),
+  ];
+  // 每列独立追加卡片，避免加载下一批时整列重新平衡导致画面跳动。
+  const columns = Array.from({ length: columnCount }, (_, index) =>
+    templates.filter((_, i) => i % columnCount === index),
+  );
   return (
     <div className="space-y-5">
       <div className="yp-page-header flex justify-between items-start gap-4">
@@ -111,12 +158,10 @@ export default function Templates() {
             setSearch(e.target.value);
             if (!e.target.value) {
               setKeyword("");
-              setPage(1);
             }
           }}
           onSearch={(v) => {
             setKeyword(v.trim());
-            setPage(1);
           }}
           prefix={<SearchOutlined />}
         />
@@ -128,7 +173,6 @@ export default function Templates() {
           value={category}
           onChange={(v) => {
             setCategory(v);
-            setPage(1);
           }}
           options={Object.entries(categoryMap).map(([value, label]) => ({
             value,
@@ -147,132 +191,153 @@ export default function Templates() {
             ]}
             onChange={(value) => {
               setMarketStatus(value);
-              setPage(1);
             }}
           />
         )}
       </Space>
-      {query.error && (
+      {query.error && !query.isFetchNextPageError && (
         <Alert
           type="error"
           message={query.error.message}
           action={<Button onClick={() => void query.refetch()}>重试</Button>}
         />
       )}
-      <div className="columns-1 gap-5 md:columns-2 xl:columns-3">
-        {query.isPending
-          ? Array.from({ length: 6 }, (_, i) => (
-              <Card key={i} style={{ marginBottom: 20, breakInside: "avoid" }}>
-                <Skeleton active />
-              </Card>
-            ))
-          : query.data?.items.map((t) => (
-              <Card
-                key={t.id}
-                styles={{ body: { padding: 12 } }}
-                className="overflow-hidden"
-                style={{ marginBottom: 20, breakInside: "avoid" }}
-                cover={
-                  t.cover ? (
-                    <Image
-                      src={t.cover}
-                      alt={t.title}
-                      preview={false}
-                      width="100%"
-                      style={{ height: "auto", display: "block" }}
-                    />
-                  ) : (
-                    <div
-                      className="h-44 flex items-center justify-center"
-                      style={{
-                        background: "var(--yp-primary-50)",
-                        color: "var(--yp-primary-400)",
-                      }}
-                    >
-                      <PictureOutlined style={{ fontSize: 40 }} />
-                    </div>
-                  )
-                }
-              >
-                <div className="flex justify-between items-start gap-2 mb-2">
-                  <h3 className="text-base font-semibold m-0 min-w-0 break-words">
-                    {t.title}
-                  </h3>
-                  <Space size={0} wrap className="shrink-0">
-                    <Tag color="orange">{categoryMap[t.category]}</Tag>
-                    {!t.active && <Tag>已下架</Tag>}
-                  </Space>
-                </div>
-                <p
-                  className="text-sm mb-3"
-                  style={{
-                    color: "var(--yp-neutral-500)",
-                    overflowWrap: "anywhere",
-                  }}
-                >
-                  {t.description}
-                </p>
-                <Button
-                  type="primary"
-                  block
-                  disabled={!canUse || !t.active}
-                  onClick={() =>
-                    navigate(
-                      `/video-editor?templateId=${encodeURIComponent(t.id)}`,
-                    )
-                  }
-                >
-                  {t.active ? "使用模板" : "已下架"}
-                </Button>
-                {canManage && (
-                  <Popconfirm
-                    title={
-                      t.active ? "确认下架该模板？" : "确认重新上架该模板？"
-                    }
-                    description={
-                      t.active
-                        ? "下架后无法用于新创作，已有作品和已提交任务保留。"
-                        : "上架后可再次使用该模板创建视频。"
-                    }
-                    okText="确定"
-                    cancelText="取消"
-                    onConfirm={() =>
-                      availability
-                        .mutateAsync({ id: t.id, active: !t.active })
-                        .catch(() => undefined)
+      <div
+        className="grid items-start gap-5"
+        style={{
+          gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+        }}
+      >
+        {columns.map((column, index) => (
+          <div key={index} className="min-w-0">
+            {query.isPending
+              ? Array.from({ length: 2 }, (_, i) => (
+                  <Card key={i} style={{ marginBottom: 20 }}>
+                    <Skeleton active />
+                  </Card>
+                ))
+              : column.map((t) => (
+                  <Card
+                    key={t.id}
+                    styles={{ body: { padding: 12 } }}
+                    className="overflow-hidden"
+                    style={{ marginBottom: 20 }}
+                    cover={
+                      t.cover ? (
+                        <Image
+                          src={t.cover}
+                          alt={t.title}
+                          preview={false}
+                          width="100%"
+                          style={{ height: "auto", display: "block" }}
+                        />
+                      ) : (
+                        <div
+                          className="h-44 flex items-center justify-center"
+                          style={{
+                            background: "var(--yp-primary-50)",
+                            color: "var(--yp-primary-400)",
+                          }}
+                        >
+                          <PictureOutlined style={{ fontSize: 40 }} />
+                        </div>
+                      )
                     }
                   >
+                    <div className="flex justify-between items-start gap-2 mb-2">
+                      <h3 className="text-base font-semibold m-0 min-w-0 break-words">
+                        {t.title}
+                      </h3>
+                      <Space size={0} wrap className="shrink-0">
+                        <Tag color="orange">{categoryMap[t.category]}</Tag>
+                        {!t.active && <Tag>已下架</Tag>}
+                      </Space>
+                    </div>
+                    <p
+                      className="text-sm mb-3"
+                      style={{
+                        color: "var(--yp-neutral-500)",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {t.description}
+                    </p>
                     <Button
+                      type="primary"
                       block
-                      danger={t.active}
-                      style={{ marginTop: 8 }}
-                      loading={
-                        availability.isPending &&
-                        availability.variables?.id === t.id
+                      disabled={!canUse || !t.active}
+                      onClick={() =>
+                        navigate(
+                          `/video-editor?templateId=${encodeURIComponent(t.id)}`,
+                        )
                       }
                     >
-                      {t.active ? "下架" : "重新上架"}
+                      {t.active ? "使用模板" : "已下架"}
                     </Button>
-                  </Popconfirm>
-                )}
-              </Card>
-            ))}
+                    {canManage && (
+                      <Popconfirm
+                        title={
+                          t.active ? "确认下架该模板？" : "确认重新上架该模板？"
+                        }
+                        description={
+                          t.active
+                            ? "下架后无法用于新创作，已有作品和已提交任务保留。"
+                            : "上架后可再次使用该模板创建视频。"
+                        }
+                        okText="确定"
+                        cancelText="取消"
+                        onConfirm={() =>
+                          availability
+                            .mutateAsync({ id: t.id, active: !t.active })
+                            .catch(() => undefined)
+                        }
+                      >
+                        <Button
+                          block
+                          danger={t.active}
+                          style={{ marginTop: 8 }}
+                          loading={
+                            availability.isPending &&
+                            availability.variables?.id === t.id
+                          }
+                        >
+                          {t.active ? "下架" : "重新上架"}
+                        </Button>
+                      </Popconfirm>
+                    )}
+                  </Card>
+                ))}
+          </div>
+        ))}
       </div>
-      {!query.isPending && !query.error && !query.data?.total && (
+      {!query.isPending && !query.error && !templates.length && (
         <Empty description="暂无匹配的模板" />
       )}
-      {!!query.data?.total && (
-        <div className="flex justify-end">
-          <Pagination
-            current={page}
-            total={query.data.total}
-            pageSize={12}
-            showSizeChanger={false}
-            onChange={setPage}
-            showTotal={(n) => `共 ${n} 个模板`}
+      <div ref={loadMoreRef} className="py-4 text-center" aria-live="polite">
+        {query.isFetchNextPageError ? (
+          <Alert
+            type="error"
+            message={`加载更多失败：${query.error?.message || "请重试"}`}
+            action={
+              <Button
+                loading={query.isFetchingNextPage}
+                onClick={() =>
+                  void query.fetchNextPage({ cancelRefetch: false })
+                }
+              >
+                重试
+              </Button>
+            }
           />
-        </div>
-      )}
+        ) : query.isFetchingNextPage ? (
+          <Space>
+            <Spin size="small" />
+            <span>加载中…</span>
+          </Space>
+        ) : templates.length > 0 && !query.hasNextPage ? (
+          <span className="text-sm text-gray-400">没有更多模板了</span>
+        ) : null}
+      </div>
     </div>
   );
 }

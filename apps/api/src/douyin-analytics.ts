@@ -1,4 +1,9 @@
 import {
+  templateTagBindings,
+  matchVideoTags,
+  videoTagBinding,
+} from "./template-tag-bindings.js";
+import {
   BadRequestException,
   Body,
   ConflictException,
@@ -29,7 +34,6 @@ import {
   bucketFor,
   DataProviderError,
   DouyinDataProvider,
-  matchTrackingTags,
   normalizeTrackingTag,
   shanghaiDate,
 } from "./douyin-data-provider.js";
@@ -357,14 +361,10 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           const bucket = bucketFor(capturedAt);
           await transaction(async (tx) => {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${state.account.organizationId + ":tags"}))`;
-            const bindings = await tx.templateTrackingTag.findMany({
-              where: {
-                organizationId: state.account.organizationId,
-                templateId: { not: null },
-                active: true,
-                deletedAt: null,
-              },
-            });
+            const bindings = await templateTagBindings(
+              tx,
+              state.account.organizationId,
+            );
             for (const v of result.videos) {
               const prior = await tx.platformVideo.findUnique({
                 where: {
@@ -373,13 +373,16 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
                     remoteId: v.remoteId,
                   },
                 },
-                include: { binding: true },
+                include: {
+                  binding: true,
+                  templateTagBinding: { include: { tag: true } },
+                },
               });
+              const priorBinding = prior ? videoTagBinding(prior) : null;
               const match =
-                prior?.binding &&
-                (!prior.binding.active || prior.binding.deletedAt)
+                priorBinding && (!priorBinding.active || priorBinding.deletedAt)
                   ? {}
-                  : matchTrackingTags(v.tags, bindings);
+                  : matchVideoTags(v.tags, bindings);
               const video = await tx.platformVideo.upsert({
                 where: {
                   accountId_remoteId: {
@@ -465,14 +468,16 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
     }
   }
   async bindings(org: string) {
-    return this.db.templateTrackingTag.findMany({
-      where: { organizationId: org, templateId: { not: null } },
-      orderBy: { createdAt: "desc" },
-    });
+    return templateTagBindings(this.db, org, false);
   }
   async availableTags(org: string) {
     return this.db.templateTrackingTag.findMany({
-      where: { organizationId: org, active: true, deletedAt: null },
+      where: {
+        organizationId: org,
+        active: true,
+        deletedAt: null,
+        systemGenerated: false,
+      },
       orderBy: [{ sort: "asc" }, { createdAt: "desc" }],
     });
   }
@@ -536,24 +541,22 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
     return this.db.$transaction(
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${org + ":tags"}))`;
-        const bindings = await tx.templateTrackingTag.findMany({
-          where: {
-            organizationId: org,
-            templateId: { not: null },
-            active: true,
-            deletedAt: null,
-          },
-        });
+        const bindings = await templateTagBindings(tx, org);
         const videos = await tx.platformVideo.findMany({
           where: { organizationId: org },
-          include: { binding: true },
+          include: {
+            binding: true,
+            templateTagBinding: { include: { tag: true } },
+          },
         });
         let processed = 0;
         for (const v of videos) {
-          if (v.binding && (!v.binding.active || v.binding.deletedAt)) continue;
+          const priorBinding = videoTagBinding(v);
+          if (priorBinding && (!priorBinding.active || priorBinding.deletedAt))
+            continue;
           await tx.platformVideo.update({
             where: { id: v.id },
-            data: matchTrackingTags(v.tags, bindings),
+            data: matchVideoTags(v.tags, bindings),
           });
           processed++;
         }
@@ -593,7 +596,10 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         accountId: { in: accounts.map((a) => a.id) },
         publishedAt: { lt: range.last },
       },
-      include: { binding: true },
+      include: {
+        binding: true,
+        templateTagBinding: { include: { tag: true } },
+      },
       orderBy: { publishedAt: "desc" },
     });
     const [videoStats, fanStats] = await Promise.all([
@@ -618,6 +624,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
     }
     const videos = records
       .map((v) => {
+        const binding = videoTagBinding(v);
         const window = videoStats.get(v.id);
         const fields = ["views", "likes", "comments", "shares"] as const;
         const metrics = Object.fromEntries(
@@ -634,16 +641,16 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           publishedAt: v.publishedAt,
           tags: v.tags,
           matchStatus: v.matchStatus,
-          template: v.binding
+          template: binding
             ? {
                 id:
                   canonical.get(
-                    JSON.stringify([v.binding.templateId, v.binding.version]),
-                  )?.id || v.binding.id,
-                templateId: v.binding.templateId,
-                title: v.binding.titleSnapshot,
-                version: v.binding.version,
-                tag: v.binding.tag,
+                    JSON.stringify([binding.templateId, binding.version]),
+                  )?.id || binding.id,
+                templateId: binding.templateId,
+                title: binding.titleSnapshot,
+                version: binding.version,
+                tag: binding.tag,
               }
             : null,
           metrics,

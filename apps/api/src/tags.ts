@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   Controller,
   Get,
@@ -14,6 +15,7 @@ import {
   ConflictException,
 } from "@nestjs/common";
 import {
+  IsOptional,
   IsString,
   Length,
   Matches,
@@ -28,7 +30,12 @@ import { normalizeTrackingTag } from "./douyin-data-provider.js";
 import type { Prisma } from "@prisma/client";
 export class TagDto {
   @IsString() @Length(1, 100) name!: string;
-  @IsString() @Length(1, 60) @Matches(/^[A-Z0-9_]+$/) code!: string;
+  // 兼容旧客户端传入编码；新增时由服务端生成，更新时保留原编码。
+  @IsOptional()
+  @IsString()
+  @Length(1, 60)
+  @Matches(/^[A-Z0-9_]+$/)
+  code?: string;
   @IsString() @Length(0, 200) description!: string;
   @IsInt() @Min(0) @Max(9999) sort!: number;
   @IsBoolean() active!: boolean;
@@ -45,7 +52,6 @@ const clean = (v: TagDto) => {
   return {
     name: v.name.trim().replace(/^#/, ""),
     tag,
-    code: v.code,
     description: v.description.trim(),
     sort: v.sort,
     active: v.active,
@@ -69,6 +75,7 @@ export class TagsController {
       throw new BadRequestException("状态无效");
     const where: Prisma.TemplateTrackingTagWhereInput = {
       organizationId: req.user.organizationId,
+      systemGenerated: false,
       deletedAt: null,
       ...(q.name
         ? {
@@ -102,7 +109,12 @@ export class TagsController {
     id: string,
   ) {
     const tag = await tx.templateTrackingTag.findFirst({
-      where: { id, organizationId: req.user.organizationId, deletedAt: null },
+      where: {
+        id,
+        organizationId: req.user.organizationId,
+        systemGenerated: false,
+        deletedAt: null,
+      },
     });
     if (!tag) throw new NotFoundException("标签不存在");
     return tag;
@@ -130,7 +142,11 @@ export class TagsController {
   @Post() create(@Req() req: AuthRequest, @Body() dto: TagDto) {
     return this.mutate(req, "tag.create", (tx) =>
       tx.templateTrackingTag.create({
-        data: { ...clean(dto), organizationId: req.user.organizationId },
+        data: {
+          ...clean(dto),
+          code: `TAG_${randomUUID().replaceAll("-", "").toUpperCase()}`,
+          organizationId: req.user.organizationId,
+        },
       }),
     );
   }
@@ -142,7 +158,11 @@ export class TagsController {
     return this.mutate(req, "tag.update", async (tx) => {
       const row = await this.find(tx, req, id),
         data = clean(dto);
-      if (row.templateId && row.tag !== data.tag)
+      if (
+        row.tag !== data.tag &&
+        (row.templateId ||
+          (await tx.templateTagBinding.count({ where: { tagId: id } })))
+      )
         throw new ConflictException(
           "该标签已关联模板版本，不能更换发布 tag；请新增标签以保留历史关联。",
         );

@@ -86,7 +86,7 @@ function CreationLoader({ id }: { id: string }) {
   );
 }
 function CreationForm({ context }: { context: CreationContext }) {
-  const { template, trackingTag, tags } = context;
+  const { template, tags } = context;
   const workflow = workflowConfig(template.config);
   const [slotMaterials, setSlotMaterials] = useState<
     Record<string, PickMaterial>
@@ -120,10 +120,7 @@ function CreationForm({ context }: { context: CreationContext }) {
   const topicTags = tagIds
     .map((id) => tags.find((t) => t.id === id))
     .filter((t): t is PublishTag => !!t);
-  const publishText = [
-    ...topicTags.map((t) => `#${t.name || t.tag}`),
-    `#${trackingTag.name || trackingTag.tag}`,
-  ].join(" ");
+  const publishText = topicTags.map((t) => `#${t.name || t.tag}`).join(" ");
   const changed = () => {
     setSaved(null);
     setRequestId(crypto.randomUUID());
@@ -347,7 +344,7 @@ function CreationForm({ context }: { context: CreationContext }) {
                 value={tagIds}
                 onChange={(ids) => {
                   if (ids.length > 10) {
-                    message.warning("最多选择10个内容标签");
+                    message.warning("最多选择10个标签");
                     return;
                   }
                   setTagIds(ids);
@@ -378,6 +375,7 @@ function CreationForm({ context }: { context: CreationContext }) {
                 <Button
                   size="small"
                   type="text"
+                  disabled={!publishText}
                   icon={<CopyOutlined />}
                   onClick={() => {
                     void navigator.clipboard
@@ -395,14 +393,7 @@ function CreationForm({ context }: { context: CreationContext }) {
                 {topicTags.map((t) => (
                   <Tag key={t.id}>#{t.name || t.tag}</Tag>
                 ))}
-                <Tag color="orange">#{trackingTag.name || trackingTag.tag}</Tag>
               </Space>
-              <p
-                className="text-xs mt-2 mb-0"
-                style={{ color: "var(--yp-neutral-500)" }}
-              >
-                橙色话题用于关联模板版本，发布时请一并保留；其他内容标签可自由组合。
-              </p>
             </div>
             <Form.Item
               name="title"

@@ -6,7 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../src/security.js";
 import { fixtureAccess } from "./access-fixture.js";
 const { createApp } = await import("../dist/app.js");
-test("template creations: managed multiple tags, automatic identity, snapshots, revision and idempotency", async () => {
+test("template creations: managed multiple tags without automatic tags, snapshots, revision and idempotency", async () => {
   const db = new PrismaClient(),
     app = await createApp();
   await app.listen(0, "127.0.0.1");
@@ -106,7 +106,12 @@ test("template creations: managed multiple tags, automatic identity, snapshots, 
       {},
       cookie,
     );
-    assert.equal(next.data.trackingTag.id, first.data.trackingTag.id);
+    assert.equal(first.data.trackingTag, undefined);
+    assert.equal(next.data.trackingTag, undefined);
+    assert.equal(
+      await db.templateTrackingTag.count({ where: { organizationId: org.id } }),
+      0,
+    );
     const topics = [];
     for (const [name, code] of [
       ["新品", "NEW"],
@@ -188,11 +193,16 @@ test("template creations: managed multiple tags, automatic identity, snapshots, 
     );
     assert.equal(created.status, 201);
     assert.equal(created.data.status, "awaiting_provider");
-    assert.deepEqual(created.data.publishTags, [
-      "新品",
-      "探店",
-      first.data.trackingTag.name,
-    ]);
+    assert.deepEqual(created.data.publishTags, ["新品", "探店"]);
+    assert.equal(created.data.trackingTagId, null);
+    assert.equal(
+      await db.templateTrackingTag.count({ where: { organizationId: org.id } }),
+      2,
+    );
+    assert.equal(
+      await db.templateTagBinding.count({ where: { organizationId: org.id } }),
+      2,
+    );
     assert.equal(
       (await call(`/templates/${template.id}/creations`, "POST", dto, cookie))
         .data.id,
@@ -287,7 +297,11 @@ test("template creations: managed multiple tags, automatic identity, snapshots, 
       {},
       cookie,
     );
-    assert.notEqual(v2.data.trackingTag.tag, first.data.trackingTag.tag);
+    assert.equal(v2.data.trackingTag, undefined);
+    assert.equal(
+      await db.templateTrackingTag.count({ where: { organizationId: org.id } }),
+      2,
+    );
     const draft = await db.videoCreationDraft.findUniqueOrThrow({
       where: { id: created.data.id },
     });
@@ -295,8 +309,131 @@ test("template creations: managed multiple tags, automatic identity, snapshots, 
       slots: ["person", "product"],
     });
     assert.deepEqual(draft.publishTags, created.data.publishTags);
+    const { DouyinAnalyticsService } =
+      await import("../dist/douyin-analytics.js");
+    const analytics = app.get(DouyinAnalyticsService);
+    const account = await db.account.create({
+      data: {
+        organizationId: org.id,
+        platform: "douyin",
+        nickname: "测试",
+        accountId: randomUUID(),
+        tier: "personal_ip",
+      },
+    });
+    const video = await db.platformVideo.create({
+      data: {
+        organizationId: org.id,
+        accountId: account.id,
+        remoteId: randomUUID(),
+        title: "带两个所选标签的视频",
+        tags: ["新品", "探店"],
+        publishedAt: new Date(),
+      },
+    });
+    await call(
+      `/tags/${topics[0].id}`,
+      "PUT",
+      { name: "新品", code: "NEW", description: "", sort: 0, active: true },
+      cookie,
+    );
+    await analytics.rematch(org.id);
+    const matched = await db.platformVideo.findUniqueOrThrow({
+      where: { id: video.id },
+    });
+    assert.equal(matched.matchStatus, "matched");
+    assert.ok(matched.templateTagBindingId);
+    assert.equal(matched.bindingId, null);
+    const date = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const overview = await analytics.overview(org.id, {
+      start: date,
+      end: date,
+    });
+    assert.equal(
+      overview.templates.find((t) => t.templateId === template.id)?.videoCount,
+      1,
+    );
+    const second = await db.template.create({
+      data: {
+        organizationId: org.id,
+        title: "另一个模板",
+        description: "test",
+        category: "new_product",
+        config: { slots: ["person", "product"] },
+      },
+    });
+    const shared = await call(
+      `/templates/${second.id}/creations`,
+      "POST",
+      {
+        ...dto,
+        requestId: randomUUID(),
+        tagIds: [topics[1].id],
+      },
+      cookie,
+    );
+    assert.equal(shared.status, 201, JSON.stringify(shared.data));
+    assert.deepEqual(shared.data.publishTags, ["探店"]);
+    await analytics.rematch(org.id);
+    const conflict = await db.platformVideo.findUniqueOrThrow({
+      where: { id: video.id },
+    });
+    assert.equal(conflict.matchStatus, "conflict");
+    assert.equal(conflict.bindingId, null);
+    assert.equal(conflict.templateTagBindingId, null);
+    const noTags = await call(
+      `/templates/${second.id}/creations`,
+      "POST",
+      {
+        ...dto,
+        requestId: randomUUID(),
+        tagIds: [],
+      },
+      cookie,
+    );
+    assert.equal(noTags.status, 201);
+    assert.deepEqual(noTags.data.publishTags, []);
+    assert.equal(
+      await db.templateTrackingTag.count({ where: { organizationId: org.id } }),
+      2,
+    );
+    const auto = await db.templateTrackingTag.create({
+      data: {
+        organizationId: org.id,
+        templateId: template.id,
+        tag: `imp_${template.id}_v1`,
+        name: `imp_${template.id}_v1`,
+        systemGenerated: true,
+        version: "v1",
+      },
+    });
+    const visibleTags = await call("/tags", "GET", undefined, cookie);
+    assert.equal(visibleTags.data.total, 2);
+    assert.ok(visibleTags.data.items.every((t: any) => t.id !== auto.id));
+    const prepared = await call(
+      `/templates/${second.id}/prepare`,
+      "POST",
+      {},
+      cookie,
+    );
+    assert.equal(prepared.data.tags.length, 2);
+    assert.ok(prepared.data.tags.every((t: any) => t.id !== auto.id));
+    const rename = await call(
+      `/tags/${topics[1].id}`,
+      "PUT",
+      {
+        name: "改名",
+        code: "STORE",
+        description: "",
+        sort: 0,
+        active: true,
+      },
+      cookie,
+    );
+    assert.equal(rename.status, 409);
   } finally {
     for (const organizationId of [org.id, other.id]) {
+      await db.account.deleteMany({ where: { organizationId } });
       await db.videoCreationDraft.deleteMany({ where: { organizationId } });
       await db.templateTrackingTag.deleteMany({ where: { organizationId } });
       await db.template.deleteMany({ where: { organizationId } });

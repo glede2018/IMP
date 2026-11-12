@@ -85,32 +85,6 @@ export class TemplateCreationsController {
     if (!template.active)
       throw new ConflictException("模板已下架，请选择其他模板");
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${req.user.organizationId + ":tags"}))`;
-    const tag = `imp_${template.id}_v${template.revision}`.toLowerCase();
-    const trackingTag = await tx.templateTrackingTag.upsert({
-      where: {
-        organizationId_tag: { organizationId: req.user.organizationId, tag },
-      },
-      create: {
-        organizationId: req.user.organizationId,
-        templateId: id,
-        version: `v${template.revision}`,
-        tag,
-        name: tag,
-        code: `TPL_${template.id.toUpperCase()}_V${template.revision}`,
-        titleSnapshot: template.title,
-        description: "视频发布时携带，用于识别模板版本",
-      },
-      update: {},
-    });
-    if (
-      trackingTag.templateId !== id ||
-      trackingTag.version !== `v${template.revision}`
-    )
-      throw new ConflictException("模板关联标签冲突，请联系管理员");
-    if (!trackingTag.active || trackingTag.deletedAt)
-      throw new ConflictException(
-        "该模板关联标签已停用或删除，请先在标签管理恢复可用状态，或更新模板版本",
-      );
     const { coverAsset, ...templateData } = template;
     return {
       template: {
@@ -122,7 +96,6 @@ export class TemplateCreationsController {
           ? (await this.storage.links(coverAsset)).preview
           : null,
       },
-      trackingTag,
     };
   }
   @Post(":id/prepare") prepare(
@@ -137,7 +110,7 @@ export class TemplateCreationsController {
           organizationId: req.user.organizationId,
           active: true,
           deletedAt: null,
-          templateId: null,
+          systemGenerated: false,
         },
         orderBy: [{ sort: "asc" }, { createdAt: "desc" }],
       });
@@ -205,7 +178,7 @@ export class TemplateCreationsController {
     const title = dto.title.trim();
     if (!title) throw new BadRequestException("请输入视频名称");
     return this.db.$transaction(async (tx) => {
-      const { template, trackingTag } = await this.context(tx, req, id);
+      const { template } = await this.context(tx, req, id);
       const selected = selectedWorkflowMaterials(
         template.config,
         dto.slotValues,
@@ -258,7 +231,7 @@ export class TemplateCreationsController {
         where: {
           id: { in: dto.tagIds },
           organizationId: req.user.organizationId,
-          templateId: null,
+          systemGenerated: false,
           active: true,
           deletedAt: null,
         },
@@ -298,10 +271,28 @@ export class TemplateCreationsController {
         ? applyWorkflowSlots(selected, materials)
         : null;
       const available = this.engine.availability(template.config);
-      const publishTags = [
-        ...dto.tagIds.map((id) => tags.find((t) => t.id === id)!.name),
-        trackingTag.name,
-      ];
+      const publishTags = dto.tagIds.map(
+        (id) => tags.find((t) => t.id === id)!.name,
+      );
+      // 只记录所选发布标签与模板的关联，不创建新的话题标签。
+      for (const tag of tags)
+        await tx.templateTagBinding.upsert({
+          where: {
+            tagId_templateId_version: {
+              tagId: tag.id,
+              templateId: id,
+              version: `v${template.revision}`,
+            },
+          },
+          create: {
+            organizationId: req.user.organizationId,
+            tagId: tag.id,
+            templateId: id,
+            version: `v${template.revision}`,
+            titleSnapshot: template.title,
+          },
+          update: {},
+        });
       const draft = await tx.videoCreationDraft.create({
         data: {
           organizationId: req.user.organizationId,
@@ -311,7 +302,6 @@ export class TemplateCreationsController {
           title,
           contentTagIds: dto.tagIds,
           publishTags,
-          trackingTagId: trackingTag.id,
           requestId: dto.requestId,
           ...(workflow
             ? {

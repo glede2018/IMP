@@ -84,7 +84,6 @@ test("publish tags: shared template binding, CRUD, filters, uniqueness, history 
     assert.equal((await call("/tags")).status, 401);
     const dto = {
       name: "视频类型",
-      code: "VIDEO_TYPE",
       description: "标记视频内容类型",
       sort: 1,
       active: true,
@@ -92,6 +91,27 @@ test("publish tags: shared template binding, CRUD, filters, uniqueness, history 
     const created = await call("/tags", "POST", dto, cookie);
     assert.equal(created.status, 201);
     const id = created.data.id;
+    const generatedCode = created.data.code;
+    assert.match(generatedCode, /^TAG_[A-F0-9]{32}$/);
+    // 旧客户端传入的编码不会覆盖现有标识。
+    const edited = await call(
+      `/tags/${id}`,
+      "PUT",
+      { ...dto, code: "OLD_CLIENT" },
+      cookie,
+    );
+    assert.equal(edited.status, 200);
+    assert.equal(edited.data.code, generatedCode);
+    const second = await call(
+      "/tags",
+      "POST",
+      { ...dto, name: "其他标签", code: "OLD_CLIENT" },
+      cookie,
+    );
+    assert.equal(second.status, 201);
+    assert.notEqual(second.data.code, generatedCode);
+    assert.notEqual(second.data.code, "OLD_CLIENT");
+    await call(`/tags/${second.data.id}`, "DELETE", undefined, cookie);
     assert.equal((await call("/tags", "POST", dto, cookie)).status, 409);
     for (const v of [
       { ...dto, code: "bad-code" },
@@ -126,7 +146,7 @@ test("publish tags: shared template binding, CRUD, filters, uniqueness, history 
       await db.templateTrackingTag.count({
         where: { organizationId: orgs[0].id },
       }),
-      1,
+      2,
     );
     assert.equal(
       (await call(`/tags/${id}`, "PUT", { ...dto, name: "另一个tag" }, cookie))
@@ -150,7 +170,7 @@ test("publish tags: shared template binding, CRUD, filters, uniqueness, history 
       200,
     );
     const filtered = await call(
-      "/tags?name=视频&code=VIDEO&active=false&page=1&pageSize=10",
+      `/tags?name=视频&code=${generatedCode}&active=false&page=1&pageSize=10`,
       "GET",
       undefined,
       read,
@@ -184,6 +204,7 @@ test("publish tags: shared template binding, CRUD, filters, uniqueness, history 
     });
     assert.equal(historic.templateId, template.id);
     assert.ok(historic.deletedAt);
+    assert.equal(historic.code, generatedCode);
     assert.equal((await call("/tags", "POST", dto, cookie)).status, 409);
     assert.ok(
       await db.auditLog.count({

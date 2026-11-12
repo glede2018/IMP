@@ -20,7 +20,6 @@ import { useAuth } from "@/contexts/AuthContext";
 interface TagRecord {
   id: string;
   name: string;
-  code: string;
   description: string;
   sort: number;
   active: boolean;
@@ -28,10 +27,7 @@ interface TagRecord {
   templateId?: string | null;
   tag: string;
 }
-type Values = Pick<
-  TagRecord,
-  "name" | "code" | "description" | "sort" | "active"
->;
+type Values = Pick<TagRecord, "name" | "description" | "sort" | "active">;
 interface Page {
   items: TagRecord[];
   total: number;
@@ -46,7 +42,6 @@ export default function Tags() {
   const [filterForm] = Form.useForm();
   const [filters, setFilters] = useState<{
     name?: string;
-    code?: string;
     active?: string;
   }>({});
   const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
@@ -96,8 +91,7 @@ export default function Tags() {
   const deleteRow = (record: TagRecord) =>
     modal.confirm({
       title: `确认删除标签“${record.name}”？`,
-      content:
-        "删除后不能再用于新的模板关联；已同步视频的历史关联保留。标签名称和编码仍保留，避免重复使用导致历史归属混淆。",
+      content: "删除后不能再用于新的模板关联；已同步视频的历史关联保留。",
       okText: "确认删除",
       cancelText: "取消",
       okButtonProps: { danger: true },
@@ -121,11 +115,6 @@ export default function Tags() {
       render: (name: string, r: TagRecord) => (
         <span className="text-blue-600">#{name || r.tag}</span>
       ),
-    },
-    {
-      title: "标签编码",
-      dataIndex: "code",
-      render: (v: string | null) => v || "—",
     },
     {
       title: "描述",
@@ -178,7 +167,7 @@ export default function Tags() {
       <div className="yp-page-header flex justify-between items-start gap-4">
         <div>
           <h1>标签管理</h1>
-          <p>管理视频发布时携带的 tag，统一维护标签编码与可用状态。</p>
+          <p>管理视频发布时携带的标签与可用状态。</p>
         </div>
         <Button
           type="primary"
@@ -206,19 +195,6 @@ export default function Tags() {
               allowClear
               maxLength={60}
               placeholder="请输入标签名称"
-              onPressEnter={(e) => {
-                if (e.nativeEvent.isComposing) return;
-                e.preventDefault();
-                filterForm.submit();
-              }}
-            />
-          </Form.Item>
-          <Form.Item label="标签编码" name="code">
-            <Input
-              className="yp-search-field"
-              allowClear
-              maxLength={60}
-              placeholder="请输入标签编码"
               onPressEnter={(e) => {
                 if (e.nativeEvent.isComposing) return;
                 e.preventDefault();
@@ -325,7 +301,7 @@ function TagEditor({
         <Alert
           type="info"
           className="!mt-4"
-          message="该 tag 已关联模板版本，名称固定；编码、描述、排序与状态仍可维护。"
+          message="该标签已关联模板版本，名称固定；描述、排序与状态仍可维护。"
         />
       )}
       <Form
@@ -338,12 +314,11 @@ function TagEditor({
           record
             ? {
                 name: record.name || record.tag,
-                code: record.code,
                 description: record.description,
                 sort: record.sort,
                 active: record.active,
               }
-            : { name: "", code: "", description: "", sort: 0, active: true }
+            : { name: "", description: "", sort: 0, active: true }
         }
         disabled={busy}
       >
@@ -364,20 +339,6 @@ function TagEditor({
             disabled={!!record?.templateId}
             placeholder="发布时携带的 tag，例如 御品轩新品"
           />
-        </Form.Item>
-        <Form.Item
-          name="code"
-          label={`${label}编码`}
-          rules={[
-            { required: true, message: `请输入${label}编码` },
-            {
-              pattern: /^[A-Z0-9_]+$/,
-              message: "仅支持大写英文、数字或下划线",
-            },
-            { max: 60 },
-          ]}
-        >
-          <Input maxLength={60} placeholder="请输入大写英文、数字或下划线" />
         </Form.Item>
         <Form.Item name="description" label="描述" rules={[{ max: 200 }]}>
           <Input.TextArea
