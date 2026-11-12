@@ -24,19 +24,18 @@ export function productViewPayload(
   const person = type === "person";
   const positivePrompt = person ? PERSON_VIEW_POSITIVE : PRODUCT_VIEW_POSITIVE;
   const negativePrompt = person ? PERSON_VIEW_NEGATIVE : PRODUCT_VIEW_NEGATIVE;
-  const image =
-    model.inputs?.find((p: any) => p.type === "image" && p.multiple) ||
-    (person && ids.length === 1
-      ? model.inputs?.find((p: any) => p.type === "image")
-      : undefined);
+  const multiple = ids.length > 1;
+  const image = model.inputs?.find(
+    (p: any) => p.type === "image" && Boolean(p.multiple) === multiple,
+  );
   const prompt = model.inputs?.find(
     (p: any) => p.type === "text" && !negative(p.id),
   );
   if (!image || !prompt || !model.outputs?.some((p: any) => p.type === "image"))
     throw new BadRequestException(
-      person
-        ? "请选择支持当前参考图数量的图片生成模型"
-        : "请选择支持多张参考图的图片生成模型",
+      multiple
+        ? "请选择支持当前参考图数量的多图生成模型"
+        : "上传一张参考图时请选择单图生成模型",
     );
   const fields = model.fields || [];
   const max = Math.min(

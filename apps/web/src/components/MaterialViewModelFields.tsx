@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
@@ -50,13 +51,11 @@ const parameters = (model: Model) =>
 export default function MaterialViewModelFields({
   imageCount,
   required,
-  type = "product",
 }: {
   type?: "product" | "person";
   imageCount: number;
   required: boolean;
 }) {
-  const person = type === "person";
   const form = Form.useFormInstance();
   const modelId = Form.useWatch("viewModelId", form);
   const query = useQuery({
@@ -67,10 +66,20 @@ export default function MaterialViewModelFields({
   const models = (query.data || []).filter(
     (m) =>
       m.outputs.some((p) => p.type === "image") &&
-      m.inputs.some((p) => p.type === "image" && (p.multiple || person)) &&
+      m.inputs.some(
+        (p) => p.type === "image" && Boolean(p.multiple) === imageCount > 1,
+      ) &&
       m.inputs.some((p) => p.type === "text"),
   );
   const model = models.find((m) => m.id === modelId);
+  const incompatible = Boolean(query.data && modelId && !model);
+  useEffect(() => {
+    // 图片数量跨越单图、多图时清空旧模型，避免沿用不匹配的输入配置。
+    if (incompatible) {
+      form.setFieldValue("viewModelId", undefined);
+      form.setFieldValue("viewParameters", {});
+    }
+  }, [incompatible, form]);
   const maxImages = (m: Model) => {
     const port =
       m.inputs.find((p) => p.type === "image" && p.multiple) ||
@@ -109,9 +118,7 @@ export default function MaterialViewModelFields({
       >
         <Select
           aria-label="三视图生成模型"
-          placeholder={
-            person ? "选择人物三视图模型" : "选择支持多张参考图的模型"
-          }
+          placeholder={imageCount > 1 ? "选择多图生成模型" : "选择单图生成模型"}
           loading={query.isLoading}
           allowClear
           showSearch

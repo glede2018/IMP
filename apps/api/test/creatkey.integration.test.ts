@@ -497,6 +497,7 @@ test("CreatKey 模板导入、槽位替换、视频归档与通用图片任务�
     const edited = await call(`/materials/${autoReady.id}`, "PUT", {
       ...inline,
       fileIds: [asset2.id],
+      productViewModelId: model.id,
       productViewRequestId: randomUUID(),
     });
     assert.equal(edited.status, 200, JSON.stringify(edited.body));
@@ -612,6 +613,7 @@ test("CreatKey 模板导入、槽位替换、视频归档与通用图片任务�
     const changedPerson = await call(`/materials/${personReady.id}`, "PUT", {
       ...personInput,
       fileIds: [asset2.id],
+      viewModelId: model.id,
       viewRequestId: randomUUID(),
     });
     assert.equal(changedPerson.status, 200, JSON.stringify(changedPerson.body));

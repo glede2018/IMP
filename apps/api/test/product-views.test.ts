@@ -39,13 +39,13 @@ test("产品视图完整传入多张参考图，固定正负提示词和单张�
     () =>
       productViewPayload(
         { ...model(), inputs: [{ id: "image", type: "image" }] },
-        ["a"],
+        ["a", "b"],
         {},
       ),
-    /多张参考图/,
+    /多图生成模型/,
   );
   assert.throws(
-    () => productViewPayload(model(), ["a"], { prompt: "替换提示词" }),
+    () => productViewPayload(model(), ["a", "b"], { prompt: "替换提示词" }),
     /参数无效/,
   );
 });
@@ -55,8 +55,8 @@ test("有独立负面参数时使用独立参数，模型必填参数必须提�
     { key: "negative_prompt" },
     { key: "strength", label: "相似度", required: true },
   );
-  assert.throws(() => productViewPayload(m, ["a"], {}), /相似度/);
-  const result = productViewPayload(m, ["a"], {
+  assert.throws(() => productViewPayload(m, ["a", "b"], {}), /相似度/);
+  const result = productViewPayload(m, ["a", "b"], {
     strength: 0.8,
     negative_prompt: "不应覆盖",
   });
@@ -97,4 +97,35 @@ test("人物支持完整传入10张参考图，超过10张或模型上限则拒�
     () => productViewPayload(m, [...ids, "extra"], {}, "person"),
     /最多支持 10 张/,
   );
+});
+
+test("人物和产品按实际图片数量区分单图与多图，禁止静默丢图", () => {
+  const single = {
+    ...model(),
+    inputs: [
+      { id: "image", type: "image", required: true },
+      { id: "prompt", type: "text", required: true },
+    ],
+    fields: [{ key: "image" }, { key: "prompt" }],
+  };
+  for (const type of ["person", "product"]) {
+    assert.deepEqual(productViewPayload(single, ["a"], {}, type).inputs.image, {
+      id: "a",
+    });
+    assert.throws(
+      () => productViewPayload(model(), ["a"], {}, type),
+      /单图生成模型/,
+    );
+    assert.throws(
+      () => productViewPayload(single, ["a", "b"], {}, type),
+      /多图生成模型/,
+    );
+    for (const count of [2, 3, 4]) {
+      const ids = Array.from({ length: count }, (_, i) => `ref-${i}`);
+      assert.deepEqual(
+        productViewPayload(model(), ids, {}, type).inputs.images,
+        ids.map((id) => ({ id })),
+      );
+    }
+  }
 });
