@@ -62,12 +62,21 @@ test("material library: storage, validation, ordering, search, tenant isolation,
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9xkAAAAASUVORK5CYII=",
       "base64",
     );
-    const upload = async (bytes: Buffer, mime = "image/png") => {
+    const upload = async (
+      bytes: Buffer,
+      mime = "image/png",
+      type = "product",
+    ) => {
       const f = new FormData();
       f.append("file", new Blob([bytes], { type: mime }), "sample.png");
-      return call("/materials/files?type=product", "POST", f, cookie);
+      return call(`/materials/files?type=${type}`, "POST", f, cookie);
     };
-    const first = await upload(png);
+    // 产品和人物图片均允许恰好 10 MB，并继续校验素材保存。
+    const maxImage = Buffer.concat([
+      png,
+      Buffer.alloc(10 * 1024 * 1024 - png.length),
+    ]);
+    const first = await upload(maxImage);
     const second = await upload(png);
     assert.equal(first.status, 201);
     assert.equal(second.status, 201);
@@ -83,7 +92,7 @@ test("material library: storage, validation, ordering, search, tenant isolation,
     const personForm = new FormData();
     personForm.append(
       "file",
-      new Blob([png], { type: "image/png" }),
+      new Blob([maxImage], { type: "image/png" }),
       "person.png",
     );
     const personUpload = await call(
@@ -104,7 +113,12 @@ test("material library: storage, validation, ordering, search, tenant isolation,
     );
 
     assert.equal((await upload(Buffer.from("not-an-image"))).status, 400);
-    assert.equal((await upload(Buffer.alloc(3 * 1024 * 1024 + 1))).status, 413);
+    for (const type of ["product", "person"])
+      assert.equal(
+        (await upload(Buffer.alloc(10 * 1024 * 1024 + 1), "image/png", type))
+          .status,
+        413,
+      );
     await db.materialCategory.create({
       data: {
         organizationId: org.id,
@@ -374,7 +388,10 @@ test("material library: storage, validation, ordering, search, tenant isolation,
       { headers: { Cookie: cookie } },
     );
     assert.equal(response.status, 200);
-    assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
+    assert.equal(
+      Buffer.compare(Buffer.from(await response.arrayBuffer()), maxImage),
+      0,
+    );
     assert.equal(
       (await db.work.findUniqueOrThrow({ where: { id: work.data.id } }))
         .materialSnapshot[0].priceCents,

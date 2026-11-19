@@ -104,11 +104,7 @@ export default function Works() {
     (w) => selected.includes(w.id) && downloadable(w),
   );
   return (
-    <div className="space-y-5">
-      <div className="yp-page-header">
-        <h1>我的作品</h1>
-        <p>集中查看视频作品，下载视频并复制文案与话题，手动发布到社交平台。</p>
-      </div>
+    <div className="space-y-4">
       <div className="yp-card p-5">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <Input.Search
@@ -191,9 +187,6 @@ export default function Works() {
             <Button onClick={reset}>重置</Button>
           </div>
         </div>
-        <Typography.Text type="secondary" className="text-xs block mt-3">
-          人物素材和产品素材按生成时保存的信息筛选，历史素材删除后仍可检索。
-        </Typography.Text>
       </div>
       {options.error && (
         <Alert

@@ -48,11 +48,7 @@ export default function TopicStrategy() {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="yp-page-header">
-        <h1>营销策略</h1>
-        <p>基于季节、竞品、原料、营销理念四个方向输出选题推荐</p>
-      </div>
+    <div className="space-y-4">
 
       {/* 方向标签栏 */}
       <div className="yp-tab-bar" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 4, background: 'var(--yp-neutral-100)', borderRadius: 'var(--yp-radius-md, 10px)', width: 'fit-content' }}>
@@ -90,7 +86,7 @@ export default function TopicStrategy() {
       </Card>
 
       {/* 选题推荐卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {topicCards.map((c) => (
           <Card key={c.title} variant="borderless" styles={{ body: { padding: 16 } }} className="yp-topic-card" hoverable>
             <div className="flex items-center justify-between mb-2">
@@ -115,7 +111,7 @@ export default function TopicStrategy() {
       </div>
 
       {/* 内容形态建议与参考案例 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* 内容形态建议 */}
         <Card variant="borderless" styles={{ body: { padding: 20 } }}>
           <div className="flex items-center gap-2 mb-4">

@@ -40,14 +40,10 @@ export default function HelpCenter() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* 页面头部 */}
-      <div className="yp-page-header">
-        <h1>帮助中心</h1>
-        <p>获取操作课程、联系支持团队、下载产品资料</p>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* 操作课程 */}
         <Card
           bordered={false}

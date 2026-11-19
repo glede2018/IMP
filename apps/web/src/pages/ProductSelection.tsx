@@ -48,13 +48,9 @@ export default function ProductSelection() {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="yp-page-header">
-        <h1>选品策略</h1>
-        <p>基于 AI Skill 自动生成新品推广选品方案</p>
-      </div>
+    <div className="space-y-4">
 
-      <div className="flex flex-col xl:flex-row gap-5">
+      <div className="flex flex-col xl:flex-row gap-4">
         {/* 左侧表单 */}
         <div className="w-full xl:w-[380px] flex-shrink-0">
           <Card variant="borderless" styles={{ body: { padding: 20 } }}>
@@ -116,7 +112,7 @@ export default function ProductSelection() {
                 }
               />
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {/* 结果标题 */}
                 <div className="flex items-center justify-between pb-4" style={{ borderBottom: '1px solid var(--yp-border)' }}>
                   <div className="flex items-center gap-3">

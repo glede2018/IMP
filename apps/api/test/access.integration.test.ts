@@ -362,6 +362,15 @@ test("RBAC: multiple roles, immediate revocation, tenant isolation, administrato
       catalog.find((p: any) => p.key === "templates:create").label,
       "添加模板",
     );
+    assert.equal(
+      catalog.find((p: any) => p.key === "template-catalog").label,
+      "模板列表查看",
+    );
+    assert.equal(
+      catalog.find((p: any) => p.key === "templates").label,
+      "模板市场查看",
+    );
+    await makeRole("catalog_reader", ["template-catalog"]);
     const storage = app.get(Storage);
     const originalUpload = storage.upload.bind(storage);
     const originalLinks = storage.links.bind(storage);

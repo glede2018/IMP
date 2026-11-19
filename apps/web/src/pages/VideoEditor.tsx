@@ -164,13 +164,10 @@ function CreationForm({ context }: { context: CreationContext }) {
     }
   };
   return (
-    <div className="space-y-5">
-      <div className="yp-page-header">
-        <h1>AI 视频生成编辑</h1>
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <Card styles={{ body: { padding: 24 } }}>
-          <div className="flex justify-between items-start mb-5 gap-3">
+          <div className="flex justify-between items-start mb-4 gap-3">
             <div>
               <h2 className="text-xl font-semibold m-0">模板预览</h2>
               <p
@@ -216,7 +213,7 @@ function CreationForm({ context }: { context: CreationContext }) {
               </div>
             )}
           </div>
-          <div className="mt-5">
+          <div className="mt-4">
             <Space wrap>
               <h3 className="text-lg font-semibold m-0">{template.title}</h3>
               <Tag color="orange">{categoryMap[template.category]}</Tag>
@@ -254,7 +251,7 @@ function CreationForm({ context }: { context: CreationContext }) {
             form={form}
             name="video-creation"
             layout="vertical"
-            className="!mt-6"
+            className="!mt-4"
             initialValues={{
               title: `${template.title}宣传视频`.slice(0, 50),
             }}
@@ -262,7 +259,7 @@ function CreationForm({ context }: { context: CreationContext }) {
             onValuesChange={changed}
           >
             {workflow && (
-              <Space direction="vertical" size={16} className="w-full !mb-5">
+              <Space direction="vertical" size={16} className="w-full !mb-4">
                 {context.execution && !context.execution.ready && (
                   <Alert
                     type="info"
@@ -364,7 +361,7 @@ function CreationForm({ context }: { context: CreationContext }) {
               />
             </Form.Item>
             <div
-              className="rounded-lg p-3 mb-6"
+              className="rounded-lg p-3 mb-4"
               style={{
                 background: "var(--yp-neutral-50)",
                 border: "1px solid var(--yp-neutral-200)",

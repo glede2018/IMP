@@ -112,9 +112,7 @@ export default function Tags() {
     {
       title: "标签名称",
       dataIndex: "name",
-      render: (name: string, r: TagRecord) => (
-        <span className="text-blue-600">#{name || r.tag}</span>
-      ),
+      render: (name: string, r: TagRecord) => <span>#{name || r.tag}</span>,
     },
     {
       title: "描述",
@@ -144,7 +142,6 @@ export default function Tags() {
         <Space>
           <Button
             type="link"
-            className="!p-0"
             disabled={!writable}
             onClick={() => setEditor({ record: r })}
           >
@@ -152,7 +149,7 @@ export default function Tags() {
           </Button>
           <Button
             type="link"
-            className="!p-0"
+            danger
             disabled={!writable}
             onClick={() => deleteRow(r)}
           >
@@ -163,12 +160,59 @@ export default function Tags() {
     },
   ];
   return (
-    <div>
-      <div className="yp-page-header flex justify-between items-start gap-4">
-        <div>
-          <h1>标签管理</h1>
-          <p>管理视频发布时携带的标签与可用状态。</p>
-        </div>
+    <div className="space-y-4">
+      <div className="yp-card p-4 flex items-center justify-between gap-4 flex-wrap">
+        <Form
+          name="tag-filter"
+          form={filterForm}
+          className="min-w-0"
+          onFinish={(v) => {
+            setFilters(v);
+            setPagination((p) => ({ ...p, page: 1 }));
+          }}
+        >
+          <Space wrap>
+            <Form.Item name="name" noStyle>
+              <Input
+                className="yp-search-field"
+                aria-label="搜索标签名称"
+                allowClear
+                maxLength={100}
+                style={{ width: 220 }}
+                placeholder="搜索标签名称"
+                onPressEnter={(e) => {
+                  if (e.nativeEvent.isComposing) return;
+                  e.preventDefault();
+                  filterForm.submit();
+                }}
+              />
+            </Form.Item>
+            <Form.Item name="active" noStyle>
+              <Select
+                aria-label="状态筛选"
+                placeholder="全部状态"
+                allowClear
+                style={{ width: 130 }}
+                options={[
+                  { value: "true", label: "启用" },
+                  { value: "false", label: "停用" },
+                ]}
+              />
+            </Form.Item>
+            <Button type="primary" htmlType="submit">
+              查询
+            </Button>
+            <Button
+              onClick={() => {
+                filterForm.resetFields();
+                setFilters({});
+                setPagination((p) => ({ ...p, page: 1 }));
+              }}
+            >
+              重置
+            </Button>
+          </Space>
+        </Form>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -178,65 +222,14 @@ export default function Tags() {
           新增标签
         </Button>
       </div>
-      <div className="yp-card p-5">
-        <Form
-          name="tag-filter"
-          form={filterForm}
-          layout="inline"
-          className="!mb-5 gap-y-3"
-          onFinish={(v) => {
-            setFilters(v);
-            setPagination((p) => ({ ...p, page: 1 }));
-          }}
-        >
-          <Form.Item label="标签名称" name="name">
-            <Input
-              className="yp-search-field"
-              allowClear
-              maxLength={60}
-              placeholder="请输入标签名称"
-              onPressEnter={(e) => {
-                if (e.nativeEvent.isComposing) return;
-                e.preventDefault();
-                filterForm.submit();
-              }}
-            />
-          </Form.Item>
-          <Form.Item label="状态" name="active">
-            <Select
-              placeholder="全部"
-              allowClear
-              style={{ width: 140 }}
-              options={[
-                { value: "true", label: "启用" },
-                { value: "false", label: "停用" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                查询
-              </Button>
-              <Button
-                onClick={() => {
-                  filterForm.resetFields();
-                  setFilters({});
-                  setPagination((p) => ({ ...p, page: 1 }));
-                }}
-              >
-                重置
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-        {query.error && (
-          <Alert
-            type="error"
-            message={query.error.message}
-            action={<Button onClick={() => void query.refetch()}>重试</Button>}
-          />
-        )}
+      {query.error && (
+        <Alert
+          type="error"
+          message={query.error.message}
+          action={<Button onClick={() => void query.refetch()}>重试</Button>}
+        />
+      )}
+      <div className="yp-card overflow-hidden">
         <Table<TagRecord>
           rowKey="id"
           loading={query.isPending}
@@ -309,7 +302,7 @@ function TagEditor({
         form={form}
         labelCol={{ span: 5 }}
         wrapperCol={{ span: 19 }}
-        className="!mt-6"
+        className="!mt-4"
         initialValues={
           record
             ? {

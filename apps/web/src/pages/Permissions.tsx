@@ -207,16 +207,6 @@ export default function Permissions({ kind }: { kind: "roles" | "users" }) {
   );
   return (
     <div>
-      <div className="mb-5">
-        <h2 className="text-2xl font-semibold">
-          {isRoles ? "角色管理" : "用户管理"}
-        </h2>
-        <p className="mt-1 text-sm" style={{ color: "var(--yp-neutral-500)" }}>
-          {isRoles
-            ? "维护系统角色并配置可访问菜单"
-            : "管理后台账号、登录密码和角色分配"}
-        </p>
-      </div>
       {error && (
         <Alert
           type="error"

@@ -105,13 +105,7 @@ export default function Analytics() {
   if (live) return <LiveAnalytics onDemo={() => setLive(false)} />;
   return (
     <div className="dc-page">
-      <div className="yp-page-header dc-header">
-        <div>
-          <h1>数据中心</h1>
-          <p>
-            内容效果与带货贡献分析 · 从账号、视频和模板，找到值得复用的内容。
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <Space>
           <Tag color="orange">演示模式 · 全部为虚拟数据</Tag>
           <Button onClick={() => setLive(true)}>查看真实数据</Button>

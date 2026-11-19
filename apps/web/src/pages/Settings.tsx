@@ -7,11 +7,7 @@ export default function Settings() {
   const { message } = App.useApp();
   const [busy, setBusy] = useState(false);
   return (
-    <div className="space-y-6">
-      <div className="yp-page-header">
-        <h1>账号设置</h1>
-        <p>查看组织信息与修改登录密码</p>
-      </div>
+    <div className="space-y-4">
       <Card>
         <Descriptions
           column={2}

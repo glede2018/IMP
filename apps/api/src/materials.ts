@@ -199,7 +199,7 @@ export class MaterialsController {
   @Post("files")
   @UseInterceptors(
     FileInterceptor("file", {
-      limits: { fileSize: 3 * 1024 * 1024, files: 1, fields: 0 },
+      limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 0 },
     }),
   )
   async file(
@@ -209,7 +209,7 @@ export class MaterialsController {
   ) {
     requireRole(req);
     if (!file?.size)
-      throw new BadRequestException("请选择图片，单张不超过 3 MB");
+      throw new BadRequestException("请选择图片，单张不超过 10 MB");
     const stored = await this.storage.upload(
       file,
       req.user.organizationId,
@@ -366,12 +366,12 @@ export class MaterialsController {
         assets.some(
           (a) =>
             (!["image/jpeg", "image/png", "image/webp"].includes(a.mimeType) ||
-              a.size > 3 * 1024 * 1024) &&
+              a.size > 10 * 1024 * 1024) &&
             !old?.files.some((f) => f.assetId === a.id),
         )
       )
         throw new BadRequestException(
-          "仅支持单张不超过3MB的 JPG/PNG/WebP 图片",
+          "仅支持单张不超过10MB的 JPG/PNG/WebP 图片",
         );
       await tx.asset.updateMany({
         where: { id: { in: dto.fileIds } },

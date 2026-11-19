@@ -15,11 +15,7 @@ import {
   Spin,
   Tag,
 } from "antd";
-import {
-  PictureOutlined,
-  PlusOutlined,
-  SearchOutlined,
-} from "@ant-design/icons";
+import { PictureOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   useInfiniteQuery,
   useMutation,
@@ -32,10 +28,6 @@ import { useAuth } from "@/contexts/AuthContext";
 type Row = Template & { cover?: string | null };
 export default function Templates() {
   const { user } = useAuth();
-  const canCreate =
-    !!user &&
-    (user.permissions.includes("*") ||
-      user.permissions.includes("templates:create"));
   const canManage =
     !!user &&
     (user.permissions.includes("*") ||
@@ -133,68 +125,57 @@ export default function Templates() {
     templates.filter((_, i) => i % columnCount === index),
   );
   return (
-    <div className="space-y-5">
-      <div className="yp-page-header flex justify-between items-start gap-4">
-        <div>
-          <h1>模板市场</h1>
-        </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          disabled={!canCreate}
-          onClick={() => navigate("/template-catalog")}
-        >
-          导入模板
-        </Button>
-      </div>
-      <Space wrap>
-        <Input.Search
-          aria-label="搜索模板名称"
-          placeholder="搜索模板名称"
-          value={search}
-          allowClear
-          style={{ width: 280 }}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            if (!e.target.value) {
-              setKeyword("");
-            }
-          }}
-          onSearch={(v) => {
-            setKeyword(v.trim());
-          }}
-          prefix={<SearchOutlined />}
-        />
-        <Select
-          aria-label="模板分类"
-          placeholder="全部分类"
-          allowClear
-          style={{ width: 160 }}
-          value={category}
-          onChange={(v) => {
-            setCategory(v);
-          }}
-          options={Object.entries(categoryMap).map(([value, label]) => ({
-            value,
-            label,
-          }))}
-        />
-        {canManage && (
-          <Select
-            aria-label="模板上架状态"
-            value={marketStatus}
-            style={{ width: 140 }}
-            options={[
-              { value: "active", label: "上架中" },
-              { value: "inactive", label: "已下架" },
-              { value: "all", label: "全部状态" },
-            ]}
-            onChange={(value) => {
-              setMarketStatus(value);
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <Space wrap size={16}>
+          <Input.Search
+            aria-label="搜索模板名称"
+            placeholder="搜索模板名称"
+            value={search}
+            allowClear
+            style={{ width: 280 }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              if (!e.target.value) {
+                setKeyword("");
+              }
             }}
+            onSearch={(v) => {
+              setKeyword(v.trim());
+            }}
+            prefix={<SearchOutlined />}
           />
-        )}
-      </Space>
+          <Select
+            aria-label="模板分类"
+            placeholder="全部分类"
+            allowClear
+            style={{ width: 160 }}
+            value={category}
+            onChange={(v) => {
+              setCategory(v);
+            }}
+            options={Object.entries(categoryMap).map(([value, label]) => ({
+              value,
+              label,
+            }))}
+          />
+          {canManage && (
+            <Select
+              aria-label="模板上架状态"
+              value={marketStatus}
+              style={{ width: 140 }}
+              options={[
+                { value: "active", label: "上架中" },
+                { value: "inactive", label: "已下架" },
+                { value: "all", label: "全部状态" },
+              ]}
+              onChange={(value) => {
+                setMarketStatus(value);
+              }}
+            />
+          )}
+        </Space>
+      </div>
       {query.error && !query.isFetchNextPageError && (
         <Alert
           type="error"
@@ -203,7 +184,7 @@ export default function Templates() {
         />
       )}
       <div
-        className="grid items-start gap-5"
+        className="grid items-start gap-4"
         style={{
           gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
         }}
@@ -212,7 +193,7 @@ export default function Templates() {
           <div key={index} className="min-w-0">
             {query.isPending
               ? Array.from({ length: 2 }, (_, i) => (
-                  <Card key={i} style={{ marginBottom: 20 }}>
+                  <Card key={i} style={{ marginBottom: 16 }}>
                     <Skeleton active />
                   </Card>
                 ))
@@ -221,7 +202,7 @@ export default function Templates() {
                     key={t.id}
                     styles={{ body: { padding: 12 } }}
                     className="overflow-hidden"
-                    style={{ marginBottom: 20 }}
+                    style={{ marginBottom: 16 }}
                     cover={
                       t.cover ? (
                         <Image

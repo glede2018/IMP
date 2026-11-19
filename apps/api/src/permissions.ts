@@ -3,7 +3,8 @@ export const permissionCatalog = [
   ["home", "系统首页查看"],
   ["accounts", "账号查看"],
   ["accounts:write", "账号管理"],
-  ["templates", "模板查看"],
+  ["template-catalog", "模板列表查看"],
+  ["templates", "模板市场查看"],
   ["templates:create", "添加模板"],
   ["templates:write", "模板管理"],
   ["assets", "素材查看"],
@@ -25,6 +26,7 @@ export const permissionCatalog = [
 const permissionGroups: Record<string, string> = {
   home: "系统首页",
   accounts: "账号",
+  "template-catalog": "模板",
   templates: "模板",
   assets: "素材",
   works: "作品",
@@ -57,7 +59,6 @@ export function permissionsFor(user: AccessUser) {
 }
 export function moduleFor(path: string) {
   let p = path.replace(/^\/api\/v1\//, "").split("/")[0];
-  if (p === "template-catalog") p = "templates";
   if (p === "model-generations") p = "assets";
   return ["materials", "material-categories"].includes(p)
     ? "assets"

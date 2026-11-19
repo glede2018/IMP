@@ -135,6 +135,34 @@ test("CreatKey 模板导入、槽位替换、视频归档与通用图片任务�
       (await call("/template-catalog")).body.items[0].title,
       template.title,
     );
+    // 两个模板页面分别授权，菜单与接口保持一致，撤权立即生效。
+    const setPermissions = (permissions: string[]) =>
+      db.accessRole.updateMany({
+        where: { organizationId: org.id },
+        data: { permissions },
+      });
+    await setPermissions(["templates"]);
+    assert.equal((await call("/templates")).status, 200);
+    assert.equal((await call("/template-catalog")).status, 403);
+    assert.equal((await call(`/template-catalog/${template.id}`)).status, 403);
+    await setPermissions(["template-catalog"]);
+    assert.equal((await call("/template-catalog")).status, 200);
+    assert.equal((await call(`/template-catalog/${template.id}`)).status, 200);
+    assert.equal((await call("/templates")).status, 403);
+    await setPermissions(["template-catalog", "templates"]);
+    assert.equal(
+      (
+        await call("/template-catalog/import", "POST", {
+          sourceTemplateId: template.id,
+          title: "无权导入",
+          description: "",
+          category: "festival",
+          slotTypes: { image: "product" },
+        })
+      ).status,
+      403,
+    );
+    await setPermissions(["template-catalog", "templates", "templates:create"]);
     const imported = await call("/template-catalog/import", "POST", {
       sourceTemplateId: template.id,
       title: "本地标题",
@@ -143,6 +171,7 @@ test("CreatKey 模板导入、槽位替换、视频归档与通用图片任务�
       slotTypes: { image: "product" },
     });
     assert.equal(imported.status, 201, JSON.stringify(imported.body));
+    await setPermissions(["*"]);
     assert.equal(imported.body.category, "festival");
     assert.equal(imported.body.config.sourceTemplateId, template.id);
     assert.equal(

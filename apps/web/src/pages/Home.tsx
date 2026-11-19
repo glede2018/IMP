@@ -26,10 +26,6 @@ export default function Home() {
     fetchWorks().then((data) => setRecentWorks(data.slice(0, 5))).catch(reportError);
   }, []);
 
-  const today = new Date();
-  const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-  const dateStr = `今天是 ${today.getFullYear()} 年 ${today.getMonth() + 1} 月 ${today.getDate()} 日，${weekDays[today.getDay()]}`;
-
   const kpiCards = [
     {
       title: '矩阵账号总数',
@@ -76,15 +72,9 @@ export default function Home() {
   ];
 
   return (
-    <div className="space-y-6">
-      {/* 欢迎头部 */}
-      <div className="yp-page-header">
-        <h1>欢迎回来，运营同学 👋</h1>
-        <p>{dateStr}</p>
-      </div>
-
+    <div className="space-y-4">
       {/* KPI 指标卡 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpiCards.map((card) => (
           <div key={card.title} className="yp-card p-5">
             <div className="flex items-center justify-between mb-3">
@@ -110,7 +100,7 @@ export default function Home() {
       </div>
 
       {/* 两栏内容：最近作品 + 快捷入口 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* 最近生成作品 */}
         <div className="yp-card lg:col-span-2">
           <div

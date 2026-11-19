@@ -71,10 +71,7 @@ export default function TemplateCatalog() {
     }
   }
   return (
-    <div className="space-y-5">
-      <div className="yp-page-header">
-        <h1>模板列表</h1>
-      </div>
+    <div className="space-y-4">
       <Input.Search
         aria-label="搜索模板"
         placeholder="搜索模板名称、简介"
@@ -213,7 +210,7 @@ export default function TemplateCatalog() {
               <CoverInput disabled={busy} />
             </Form.Item>
           </div>
-          <Row gutter={[20, 16]}>
+          <Row gutter={[16, 16]}>
             {current?.slots.map((s) => (
               <Col key={s.id} xs={24} md={12} className="min-w-0">
                 <div className="flex items-start gap-3 min-w-0">

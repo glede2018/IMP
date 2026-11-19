@@ -2,9 +2,8 @@
   --dc-muted: var(--yp-neutral-500);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--yp-module-gap);
 }
-.dc-header,
 .dc-filters {
   display: flex;
   justify-content: space-between;
@@ -12,15 +11,11 @@
   gap: 16px;
   flex-wrap: wrap;
 }
-.dc-header .ant-tag {
-  margin: 0;
-  padding: 6px 12px;
-}
 .dc-filters > .ant-typography {
   font-size: 12px;
 }
 .dc-page .ant-tabs-nav {
-  margin-bottom: 24px;
+  margin-bottom: var(--yp-module-gap);
 }
 .dc-page .ant-tabs-tab {
   font-size: 16px;

@@ -8,7 +8,7 @@ import {
   Form,
   Input,
   InputNumber,
-  Modal,
+  Drawer,
   Space,
 } from "antd";
 import MaterialImageUpload from "./MaterialImageUpload";
@@ -142,14 +142,16 @@ export default function MaterialEditor({
     />
   );
   return (
-    <Modal
+    <Drawer
       open
       title={`${record ? "编辑" : person ? "上传" : "上传"}${person ? "人物" : "产品素材"}`}
       width={780}
-      styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
+      placement="right"
+      styles={{ footer: { textAlign: "right" } }}
       maskClosable={false}
       closable={!uploading && !saving}
-      onCancel={() => void close()}
+      keyboard={!uploading && !saving}
+      onClose={() => void close()}
       footer={
         <Space>
           <Button disabled={uploading || saving} onClick={() => void close()}>
@@ -261,6 +263,6 @@ export default function MaterialEditor({
           </Form.Item>
         </Form>
       </div>
-    </Modal>
+    </Drawer>
   );
 }

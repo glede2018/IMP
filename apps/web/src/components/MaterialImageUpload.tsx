@@ -64,9 +64,9 @@ export default function MaterialImageUpload({
     if (
       !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
       !file.size ||
-      file.size > 3 * 1024 * 1024
+      file.size > 10 * 1024 * 1024
     ) {
-      message.error("仅支持 JPG/PNG/WebP，单张图片须大于 0 且不超过 3 MB");
+      message.error("仅支持 JPG/PNG/WebP，单张图片须大于 0 且不超过 10 MB");
       return Upload.LIST_IGNORE;
     }
     return true;
@@ -193,7 +193,7 @@ export default function MaterialImageUpload({
         <p className="ant-upload-text">点击或拖拽图片到此区域上传</p>
         <p className="ant-upload-hint">
           {maxCount === 1 ? "1 张人物参考图" : "最多 10 张，支持拖动或箭头排序"}{" "}
-          · 单张 ≤ 3 MB · JPG / PNG / WebP
+          · 单张 ≤ 10 MB · JPG / PNG / WebP
         </p>
       </Upload.Dragger>
       {preview && (

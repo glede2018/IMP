@@ -64,11 +64,7 @@ export default function SocialMonitor() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="yp-page-header">
-        <h1>社媒监控</h1>
-        <p>AI 抓取竞品动态与行业热点，输出监控报告</p>
-      </div>
+    <div className="space-y-4">
 
       {/* 筛选栏 */}
       <Card variant="borderless" styles={{ body: { padding: 16 } }}>
@@ -114,7 +110,7 @@ export default function SocialMonitor() {
       </Card>
 
       {/* 监控卡片网格 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {/* 1. 竞品动态追踪 */}
         <Card variant="borderless" styles={{ body: { padding: 20 } }}>
           <div className="flex items-center justify-between mb-4">

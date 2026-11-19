@@ -115,10 +115,6 @@ export default function MaterialCategories() {
     });
   return (
     <div>
-      <div className="yp-page-header">
-        <h1>素材分类</h1>
-        <p>管理产品素材的多级分类，最多支持五级</p>
-      </div>
       <div className="yp-card p-4 mb-4 flex justify-between gap-4 flex-wrap">
         <Space>
           <Input

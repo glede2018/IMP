@@ -329,11 +329,7 @@ export default function LiveAnalytics({ onDemo }: { onDemo: () => void }) {
   );
   return (
     <div className="dc-page">
-      <div className="yp-page-header dc-header">
-        <div>
-          <h1>数据中心</h1>
-          <p>内容效果与带货贡献分析</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <Space>
           <Tag color="blue">真实数据 · 未接通的指标显示 —</Tag>
           <Button onClick={onDemo}>查看虚拟数据演示</Button>

@@ -12,7 +12,7 @@ import {
   message,
 } from "antd";
 import {
-  SlidersOutlined,
+  PlusOutlined,
   PlayCircleOutlined,
   CaretRightOutlined,
   RiseOutlined,
@@ -108,15 +108,6 @@ export default function Accounts() {
   useEffect(() => {
     loadData();
   }, []);
-
-  useEffect(() => {
-    const create = () => {
-      if (canWrite) setDialogTarget("new");
-      else message.info("当前账号没有编辑权限");
-    };
-    window.addEventListener("imp-account-create", create);
-    return () => window.removeEventListener("imp-account-create", create);
-  }, [canWrite]);
 
   useEffect(() => {
     const result = searchParams.get("douyin");
@@ -307,15 +298,11 @@ export default function Accounts() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* 页面头部 */}
-      <div className="yp-page-header">
-        <h1>账号管理</h1>
-        <p>管理各平台矩阵账号的绑定与状态</p>
-      </div>
 
       {/* 平台概览统计卡 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {platformStats.map((s) => (
           <div key={s.platform} className="yp-card p-5">
             <div className="flex items-center justify-between mb-4">
@@ -389,7 +376,7 @@ export default function Accounts() {
 
       {/* 筛选栏 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Select
             placeholder="全部平台"
             value={platformFilter || undefined}
@@ -428,7 +415,14 @@ export default function Accounts() {
             style={{ width: 260 }}
           />
         </div>
-        <Button icon={<SlidersOutlined />}>高级筛选</Button>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          disabled={!canWrite}
+          onClick={() => setDialogTarget("new")}
+        >
+          绑定账号
+        </Button>
       </div>
 
       {/* 数据表格 */}

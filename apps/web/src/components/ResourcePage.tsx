@@ -21,7 +21,6 @@ export interface Identified {
 }
 export default function ResourcePage<T extends Identified>({
   title,
-  description,
   path,
   columns,
   fields,
@@ -148,11 +147,7 @@ export default function ResourcePage<T extends Identified>({
     },
   ];
   return (
-    <div className="space-y-6">
-      <div className="yp-page-header">
-        <h1>{title}</h1>
-        <p>{description}</p>
-      </div>
+    <div className="space-y-4">
       <div className="flex flex-wrap gap-3 justify-between">
         <Space wrap>
           <Input.Search

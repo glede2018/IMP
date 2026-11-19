@@ -191,10 +191,7 @@ export default function Assets() {
     </>
   );
   return (
-    <div className="space-y-6">
-      <div className="yp-page-header">
-        <h1>素材库</h1>
-      </div>
+    <div className="space-y-4">
       <div className="yp-card p-5">
         <Tabs
           activeKey={type}
@@ -210,7 +207,7 @@ export default function Assets() {
             { key: "person", label: "人物素材" },
           ]}
         />
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <Space wrap>
             <Input.Search
               aria-label="搜索素材"
@@ -366,7 +363,7 @@ export default function Assets() {
           />
         )}
         {!!query.data?.total && (
-          <div className="mt-5 flex justify-end">
+          <div className="mt-4 flex justify-end">
             <Pagination
               current={page}
               total={query.data.total}

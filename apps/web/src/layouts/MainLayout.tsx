@@ -9,19 +9,18 @@ import {
   DownOutlined,
   BellOutlined,
   BulbOutlined,
-  PlusOutlined,
   LogoutOutlined,
   SwapOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Badge, Avatar, Button, Dropdown, App, Spin } from "antd";
+import { Badge, Avatar, Dropdown, App, Spin } from "antd";
 import GlobalSearch from "@/components/GlobalSearch";
 import { canAccess } from "@/services/permissions";
 import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * 主导航配置
- * 一级目录：系统首页、账号管理、内容创作（含二级）、策略中心（含二级）、数据中心、帮助中心
+ * 一级目录：系统首页、账号管理、内容创作、策略中心、数据中心、帮助中心、设置
  */
 const topNav = [
   { key: "/", icon: <DashboardOutlined />, label: "系统首页" },
@@ -36,11 +35,22 @@ const contentCreationNav = {
     { key: "/template-catalog", label: "模板列表" },
     { key: "/templates", label: "模板市场" },
     { key: "/assets", label: "素材库" },
-    { key: "/material-categories", label: "素材分类" },
     { key: "/works", label: "我的作品" },
-    { key: "/tags", label: "标签管理" },
   ],
 };
+
+const settingsNav = [
+  { key: "/permissions/roles", label: "角色管理" },
+  { key: "/permissions/users", label: "用户管理" },
+  { key: "/tags", label: "标签管理" },
+  { key: "/material-categories", label: "素材分类" },
+];
+
+function isSettingsActive(pathname: string): boolean {
+  return settingsNav.some(
+    (item) => pathname === item.key || pathname.startsWith(`${item.key}/`),
+  );
+}
 
 const strategyNav = {
   key: "strategy",
@@ -65,8 +75,6 @@ function isContentCreationActive(pathname: string): boolean {
     "/templates",
     "/assets",
     "/works",
-    "/material-categories",
-    "/tags",
     "/video-editor",
   ].some((p) => pathname.startsWith(p));
 }
@@ -96,6 +104,7 @@ const pageTitleMap: Record<string, string> = {
   "/strategy/topic": "营销策略",
   "/analytics": "数据中心",
   "/help": "帮助中心",
+  "/settings": "账号设置",
   "/permissions/roles": "角色管理",
   "/permissions/users": "用户管理",
 };
@@ -127,13 +136,18 @@ export default function MainLayout() {
   const [contentOpen, setContentOpen] = useState(
     isContentCreationActive(location.pathname),
   );
-  const [permissionsOpen, setPermissionsOpen] = useState(
-    location.pathname.startsWith("/permissions/"),
+  const [settingsOpen, setSettingsOpen] = useState(
+    isSettingsActive(location.pathname),
   );
   const [strategyOpen, setStrategyOpen] = useState(
     isStrategyActive(location.pathname),
   );
 
+  useEffect(() => {
+    if (isSettingsActive(location.pathname)) setSettingsOpen(true);
+  }, [location.pathname]);
+
+  const settingsActive = isSettingsActive(location.pathname);
   const contentActive = isContentCreationActive(location.pathname);
   const strategyActive = isStrategyActive(location.pathname);
 
@@ -314,29 +328,22 @@ export default function MainLayout() {
                 <span>{item.label}</span>
               </NavLink>
             ))}
-          {["roles", "users"].some((k) =>
-            canAccess(user, `/permissions/${k}`),
-          ) && (
-            <div
-              className={`yp-sidebar-group ${permissionsOpen ? "open" : ""}`}
-            >
+          {settingsNav.some((item) => canAccess(user, item.key)) && (
+            <div className={`yp-sidebar-group ${settingsOpen ? "open" : ""}`}>
               <button
                 type="button"
-                aria-expanded={permissionsOpen}
-                className={`yp-sidebar-group-toggle ${location.pathname.startsWith("/permissions/") ? "active" : ""}`}
-                onClick={() => setPermissionsOpen((v) => !v)}
+                aria-expanded={settingsOpen}
+                className={`yp-sidebar-group-toggle ${settingsActive ? "active" : ""}`}
+                onClick={() => setSettingsOpen((v) => !v)}
               >
                 <span>
                   <SettingOutlined />
-                  <span>权限管理</span>
+                  <span>设置</span>
                 </span>
                 <DownOutlined className="yp-chevron" />
               </button>
               <div className="yp-sidebar-submenu">
-                {[
-                  { key: "/permissions/roles", label: "角色管理" },
-                  { key: "/permissions/users", label: "用户管理" },
-                ]
+                {settingsNav
                   .filter((c) => canAccess(user, c.key))
                   .map((c) => (
                     <NavLink
@@ -353,8 +360,6 @@ export default function MainLayout() {
             </div>
           )}
         </nav>
-
-        
       </aside>
 
       {/* 右侧主区域 */}
@@ -369,17 +374,6 @@ export default function MainLayout() {
           </h1>
           <div className="flex items-center gap-4">
             <GlobalSearch />
-            {location.pathname === "/accounts" && (
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() =>
-                  window.dispatchEvent(new Event("imp-account-create"))
-                }
-              >
-                绑定账号
-              </Button>
-            )}
             <Badge count={3} size="small">
               <button
                 className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"

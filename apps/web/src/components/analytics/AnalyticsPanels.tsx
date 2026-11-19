@@ -383,7 +383,7 @@ export function ContentOverview({
           },
         ]}
       />
-      <Row gutter={[20, 20]}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
           <Panel title="内容生产漏斗" extra={<Tag>同批作品 · 去重</Tag>}>
             <Funnel
@@ -449,7 +449,7 @@ export function ContentOverview({
           </Panel>
         </Col>
       </Row>
-      <Row gutter={[20, 20]}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} xl={8}>
           <Panel title="职人内容排行" extra={<Tag>TOP 3</Tag>}>
             <RankList
@@ -564,7 +564,7 @@ export function BusinessOverview({ data }: { data: DemoAnalytics }) {
         message="账号级归因演示"
         description={`支付和核销按各自发生时间统计；${data.unattributed === null ? "账号或类型筛选下无法分配未归因订单" : `另有 ${data.unattributed} 笔未归因支付订单，未计入上方指标`}。核销券数不代表到店人数。`}
       />
-      <Row gutter={[20, 20]}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
           <Panel title="交易履约漏斗" extra={<Tag>同批券 · 观察至期末</Tag>}>
             <Funnel
