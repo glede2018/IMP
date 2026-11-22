@@ -172,6 +172,28 @@ test("CreatKey 模板导入、槽位替换、视频归档与通用图片任务�
     });
     assert.equal(imported.status, 201, JSON.stringify(imported.body));
     await setPermissions(["*"]);
+    // 已有导入记录也按需获取最终视频，不需要重新导入或修改执行配置。
+    template.previewVideo = { type: "video", url: "https://test/preview.mp4" };
+    await setPermissions(["templates"]);
+    const preview = await call(`/templates/${imported.body.id}/preview`);
+    assert.equal(preview.status, 200);
+    assert.equal(preview.body.url, template.previewVideo.url);
+    assert.equal(
+      (await call("/templates/not-in-this-tenant/preview")).status,
+      404,
+    );
+    await setPermissions(["template-catalog"]);
+    assert.equal(
+      (await call(`/templates/${imported.body.id}/preview`)).status,
+      403,
+    );
+    await setPermissions(["*"]);
+    delete template.previewVideo;
+    assert.deepEqual(
+      (await call(`/templates/${imported.body.id}/preview`)).body,
+      { url: null },
+    );
+
     assert.equal(imported.body.category, "festival");
     assert.equal(imported.body.config.sourceTemplateId, template.id);
     assert.equal(

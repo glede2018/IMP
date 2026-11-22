@@ -1,3 +1,4 @@
+import { TemplatePreviewsController } from "./template-previews.js";
 import {
   ModelGenerations,
   ModelGenerationsController,
@@ -126,6 +127,7 @@ class ErrorFilter implements ExceptionFilter {
     AccessController,
     ModelGenerationsController,
     CreatKeyTemplatesController,
+    TemplatePreviewsController,
     HealthController,
     DouyinController,
     AuthController,

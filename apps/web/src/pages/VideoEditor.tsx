@@ -1,3 +1,4 @@
+import TemplatePreview from "@/components/TemplatePreview";
 import { workflowConfig, type SlotValue } from "@/services/workflow";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -174,7 +175,7 @@ function CreationForm({ context }: { context: CreationContext }) {
                 className="text-sm mt-1"
                 style={{ color: "var(--yp-neutral-500)" }}
               >
-                当前选择的模板封面
+                当前选择的模板视频
               </p>
             </div>
             <Button
@@ -185,33 +186,13 @@ function CreationForm({ context }: { context: CreationContext }) {
               更换模板
             </Button>
           </div>
-          <div
-            className="mx-auto rounded-lg overflow-hidden flex items-center justify-center"
-            style={{
-              width: "min(100%,320px)",
-              aspectRatio: "9 / 16",
-              background: "var(--yp-primary-50)",
-            }}
-          >
-            {template.cover ? (
-              <Image
-                src={template.cover}
-                alt={template.title}
-                style={{
-                  width: 320,
-                  aspectRatio: "9 / 16",
-                  objectFit: "cover",
-                }}
-              />
-            ) : (
-              <div
-                className="text-center"
-                style={{ color: "var(--yp-neutral-500)" }}
-              >
-                <PictureOutlined style={{ fontSize: 48 }} />
-                <p>该模板暂无封面</p>
-              </div>
-            )}
+          <div className="mx-auto" style={{ width: "min(100%, 360px)" }}>
+            <TemplatePreview
+              id={template.id}
+              title={template.title}
+              cover={template.cover}
+              mode="player"
+            />
           </div>
           <div className="mt-4">
             <Space wrap>

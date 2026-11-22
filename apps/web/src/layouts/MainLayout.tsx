@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+import SidebarGroup from "@/components/SidebarGroup";
 import { Suspense, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -6,14 +8,23 @@ import {
   HighlightOutlined,
   BarChartOutlined,
   QuestionCircleOutlined,
-  DownOutlined,
   BellOutlined,
   BulbOutlined,
   LogoutOutlined,
   SwapOutlined,
   SettingOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  AppstoreOutlined,
+  FileTextOutlined,
+  PictureOutlined,
+  VideoCameraOutlined,
+  TagsOutlined,
+  FolderOpenOutlined,
+  SafetyCertificateOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
-import { Badge, Avatar, Dropdown, App, Spin } from "antd";
+import { Badge, Avatar, Button, Dropdown, App, Spin, Tooltip } from "antd";
 import GlobalSearch from "@/components/GlobalSearch";
 import { canAccess } from "@/services/permissions";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,18 +43,26 @@ const contentCreationNav = {
   icon: <HighlightOutlined />,
   label: "内容创作",
   children: [
-    { key: "/template-catalog", label: "模板列表" },
-    { key: "/templates", label: "模板市场" },
-    { key: "/assets", label: "素材库" },
-    { key: "/works", label: "我的作品" },
+    { key: "/template-catalog", icon: <FileTextOutlined />, label: "模板列表" },
+    { key: "/templates", icon: <AppstoreOutlined />, label: "模板市场" },
+    { key: "/assets", icon: <PictureOutlined />, label: "素材库" },
+    { key: "/works", icon: <VideoCameraOutlined />, label: "我的作品" },
   ],
 };
 
 const settingsNav = [
-  { key: "/permissions/roles", label: "角色管理" },
-  { key: "/permissions/users", label: "用户管理" },
-  { key: "/tags", label: "标签管理" },
-  { key: "/material-categories", label: "素材分类" },
+  {
+    key: "/permissions/roles",
+    icon: <SafetyCertificateOutlined />,
+    label: "角色管理",
+  },
+  { key: "/permissions/users", icon: <TeamOutlined />, label: "用户管理" },
+  { key: "/tags", icon: <TagsOutlined />, label: "标签管理" },
+  {
+    key: "/material-categories",
+    icon: <FolderOpenOutlined />,
+    label: "素材分类",
+  },
 ];
 
 function isSettingsActive(pathname: string): boolean {
@@ -57,9 +76,17 @@ const strategyNav = {
   icon: <BulbOutlined />,
   label: "策略中心",
   children: [
-    { key: "/strategy/product-selection", label: "选品策略" },
-    { key: "/strategy/social-monitor", label: "社媒监控" },
-    { key: "/strategy/topic", label: "营销策略" },
+    {
+      key: "/strategy/product-selection",
+      icon: <AppstoreOutlined />,
+      label: "选品策略",
+    },
+    {
+      key: "/strategy/social-monitor",
+      icon: <BarChartOutlined />,
+      label: "社媒监控",
+    },
+    { key: "/strategy/topic", icon: <BulbOutlined />, label: "营销策略" },
   ],
 };
 
@@ -133,6 +160,23 @@ export default function MainLayout() {
       message.error(e instanceof Error ? e.message : "退出失败");
     }
   };
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("imp-sidebar-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggleSidebar = () =>
+    setCollapsed((value) => {
+      const next = !value;
+      try {
+        localStorage.setItem("imp-sidebar-collapsed", String(next));
+      } catch {
+        /* 不影响本次切换。 */
+      }
+      return next;
+    });
   const [contentOpen, setContentOpen] = useState(
     isContentCreationActive(location.pathname),
   );
@@ -204,12 +248,17 @@ export default function MainLayout() {
   ];
 
   return (
-    <div className="yp-page-shell">
+    <div
+      className={`yp-page-shell ${collapsed ? "is-sidebar-collapsed" : ""}`}
+      style={
+        { "--yp-sidebar-width": collapsed ? "72px" : "240px" } as CSSProperties
+      }
+    >
       {/* 左侧边栏 */}
       <aside className="yp-sidebar">
         {/* Logo 区 */}
         <div
-          className="flex items-center gap-2.5 px-4"
+          className="yp-sidebar-brand flex items-center"
           style={{ height: "var(--yp-topbar-height)" }}
         >
           <img
@@ -223,7 +272,7 @@ export default function MainLayout() {
             }}
           />
           <span
-            className="font-semibold text-sm tracking-tight"
+            className="yp-sidebar-label font-semibold text-sm tracking-tight"
             style={{ color: "var(--yp-neutral-900)" }}
           >
             御品轩智能营销系统
@@ -235,132 +284,102 @@ export default function MainLayout() {
           {topNav
             .filter((item) => canAccess(user, item.key))
             .map((item) => (
-              <NavLink
+              <Tooltip
                 key={item.key}
-                to={item.key}
-                end={item.key === "/"}
-                className={({ isActive }) =>
-                  `yp-sidebar-link ${isActive ? "active" : ""}`
-                }
+                title={collapsed ? item.label : undefined}
+                placement="right"
               >
-                {item.icon}
-                <span>{item.label}</span>
-              </NavLink>
+                <NavLink
+                  to={item.key}
+                  end={item.key === "/"}
+                  className={({ isActive }) =>
+                    `yp-sidebar-link ${isActive ? "active" : ""}`
+                  }
+                >
+                  {item.icon}
+                  <span className="yp-sidebar-label">{item.label}</span>
+                </NavLink>
+              </Tooltip>
             ))}
 
-          {/* 内容创作：可展开分组 */}
-          {contentCreationNav.children.some((c) => canAccess(user, c.key)) && (
-            <>
-              <div className={`yp-sidebar-group ${contentOpen ? "open" : ""}`}>
-                <button
-                  type="button"
-                  className={`yp-sidebar-group-toggle ${contentActive ? "active" : ""}`}
-                  onClick={() => setContentOpen(!contentOpen)}
-                >
-                  <span>
-                    {contentCreationNav.icon}
-                    <span>{contentCreationNav.label}</span>
-                  </span>
-                  <DownOutlined className="yp-chevron" />
-                </button>
-                <div className="yp-sidebar-submenu">
-                  {contentCreationNav.children
-                    .filter((c) => canAccess(user, c.key))
-                    .map((child) => (
-                      <NavLink
-                        key={child.key}
-                        to={child.key}
-                        className={({ isActive }) =>
-                          `yp-sidebar-subitem ${isActive ? "active" : ""}`
-                        }
-                      >
-                        <span>{child.label}</span>
-                      </NavLink>
-                    ))}
-                </div>
-              </div>
-            </>
+          {contentCreationNav.children.some((item) =>
+            canAccess(user, item.key),
+          ) && (
+            <SidebarGroup
+              id="content-creation"
+              label={contentCreationNav.label}
+              icon={contentCreationNav.icon}
+              items={contentCreationNav.children.filter((item) =>
+                canAccess(user, item.key),
+              )}
+              collapsed={collapsed}
+              open={contentOpen}
+              active={contentActive}
+              onToggle={() => setContentOpen((value) => !value)}
+            />
           )}
-          {/* 策略中心：可展开分组 */}
-          {strategyNav.children.some((c) => canAccess(user, c.key)) && (
-            <>
-              <div className={`yp-sidebar-group ${strategyOpen ? "open" : ""}`}>
-                <button
-                  type="button"
-                  className={`yp-sidebar-group-toggle ${strategyActive ? "active" : ""}`}
-                  onClick={() => setStrategyOpen(!strategyOpen)}
-                >
-                  <span>
-                    {strategyNav.icon}
-                    <span>{strategyNav.label}</span>
-                  </span>
-                  <DownOutlined className="yp-chevron" />
-                </button>
-                <div className="yp-sidebar-submenu">
-                  {strategyNav.children
-                    .filter((c) => canAccess(user, c.key))
-                    .map((child) => (
-                      <NavLink
-                        key={child.key}
-                        to={child.key}
-                        className={({ isActive }) =>
-                          `yp-sidebar-subitem ${isActive ? "active" : ""}`
-                        }
-                      >
-                        <span>{child.label}</span>
-                      </NavLink>
-                    ))}
-                </div>
-              </div>
-            </>
+          {strategyNav.children.some((item) => canAccess(user, item.key)) && (
+            <SidebarGroup
+              id="strategy"
+              label={strategyNav.label}
+              icon={strategyNav.icon}
+              items={strategyNav.children.filter((item) =>
+                canAccess(user, item.key),
+              )}
+              collapsed={collapsed}
+              open={strategyOpen}
+              active={strategyActive}
+              onToggle={() => setStrategyOpen((value) => !value)}
+            />
           )}
           {bottomNav
             .filter((item) => canAccess(user, item.key))
             .map((item) => (
-              <NavLink
+              <Tooltip
                 key={item.key}
-                to={item.key}
-                className={({ isActive }) =>
-                  `yp-sidebar-link ${isActive ? "active" : ""}`
-                }
+                title={collapsed ? item.label : undefined}
+                placement="right"
               >
-                {item.icon}
-                <span>{item.label}</span>
-              </NavLink>
+                <NavLink
+                  to={item.key}
+                  className={({ isActive }) =>
+                    `yp-sidebar-link ${isActive ? "active" : ""}`
+                  }
+                >
+                  {item.icon}
+                  <span className="yp-sidebar-label">{item.label}</span>
+                </NavLink>
+              </Tooltip>
             ))}
           {settingsNav.some((item) => canAccess(user, item.key)) && (
-            <div className={`yp-sidebar-group ${settingsOpen ? "open" : ""}`}>
-              <button
-                type="button"
-                aria-expanded={settingsOpen}
-                className={`yp-sidebar-group-toggle ${settingsActive ? "active" : ""}`}
-                onClick={() => setSettingsOpen((v) => !v)}
-              >
-                <span>
-                  <SettingOutlined />
-                  <span>设置</span>
-                </span>
-                <DownOutlined className="yp-chevron" />
-              </button>
-              <div className="yp-sidebar-submenu">
-                {settingsNav
-                  .filter((c) => canAccess(user, c.key))
-                  .map((c) => (
-                    <NavLink
-                      key={c.key}
-                      to={c.key}
-                      className={({ isActive }) =>
-                        `yp-sidebar-subitem ${isActive ? "active" : ""}`
-                      }
-                    >
-                      {c.label}
-                    </NavLink>
-                  ))}
-              </div>
-            </div>
+            <SidebarGroup
+              id="settings"
+              label="设置"
+              icon={<SettingOutlined />}
+              items={settingsNav.filter((item) => canAccess(user, item.key))}
+              collapsed={collapsed}
+              open={settingsOpen}
+              active={settingsActive}
+              onToggle={() => setSettingsOpen((value) => !value)}
+            />
           )}
         </nav>
+
       </aside>
+
+      <Tooltip
+        title={collapsed ? "展开导航" : "收起导航"}
+        placement="bottom"
+      >
+        <Button
+          type="text"
+          className="yp-sidebar-collapse"
+          onClick={toggleSidebar}
+          icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          aria-label={collapsed ? "展开导航" : "收起导航"}
+          aria-expanded={!collapsed}
+        />
+      </Tooltip>
 
       {/* 右侧主区域 */}
       <div className="yp-main-area">

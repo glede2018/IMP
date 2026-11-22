@@ -1,3 +1,4 @@
+import TemplatePreview from "@/components/TemplatePreview";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -5,7 +6,6 @@ import {
   Card,
   Empty,
   Grid,
-  Image,
   Input,
   Popconfirm,
   message,
@@ -15,7 +15,7 @@ import {
   Spin,
   Tag,
 } from "antd";
-import { PictureOutlined, SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined } from "@ant-design/icons";
 import {
   useInfiniteQuery,
   useMutation,
@@ -204,25 +204,11 @@ export default function Templates() {
                     className="overflow-hidden"
                     style={{ marginBottom: 16 }}
                     cover={
-                      t.cover ? (
-                        <Image
-                          src={t.cover}
-                          alt={t.title}
-                          preview={false}
-                          width="100%"
-                          style={{ height: "auto", display: "block" }}
-                        />
-                      ) : (
-                        <div
-                          className="h-44 flex items-center justify-center"
-                          style={{
-                            background: "var(--yp-primary-50)",
-                            color: "var(--yp-primary-400)",
-                          }}
-                        >
-                          <PictureOutlined style={{ fontSize: 40 }} />
-                        </div>
-                      )
+                      <TemplatePreview
+                        id={t.id}
+                        title={t.title}
+                        cover={t.cover}
+                      />
                     }
                   >
                     <div className="flex justify-between items-start gap-2 mb-2">

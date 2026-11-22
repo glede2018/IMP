@@ -9,6 +9,7 @@ export type RemoteTemplate = {
   title: string;
   description: string;
   cover: { url: string } | null;
+  previewVideo?: { url: string; type: "video" } | null;
   sourceHash: string;
   compatible: boolean;
   reason: string | null;
