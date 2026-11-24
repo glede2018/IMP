@@ -131,69 +131,82 @@ export class OneApiDataProvider {
         "permission_required",
         "未配置 OneAPI 密钥。",
       );
-    try {
-      // 不跟随重定向、不输出上游响应，避免密钥外泄；不在网络超时后立即重复付费请求。
-      const response = await fetch(
-        `https://api.getoneapi.com/api/${namespace}/${path}`,
-        {
-          method: "POST",
-          redirect: "error",
-          signal: AbortSignal.timeout(40000),
-          headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
+    // 每次请求独立计时；首次失败后重试两次，不输出密钥或上游原始响应。
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const signal = AbortSignal.timeout(30000);
+      try {
+        const response = await fetch(
+          `https://api.getoneapi.com/api/${namespace}/${path}`,
+          {
+            method: "POST",
+            redirect: "error",
+            signal,
+            headers: {
+              Authorization: `Bearer ${key}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
           },
-          body: JSON.stringify(body),
-        },
-      );
-      if (response.status === 401 || response.status === 403)
-        throw new DataProviderError(
-          "permission_required",
-          "OneAPI 密钥无效或接口权限不足。",
         );
-      if (response.status === 429)
+        if (response.status === 401 || response.status === 403)
+          throw new DataProviderError(
+            "permission_required",
+            "OneAPI 密钥无效或接口权限不足。",
+          );
+        if (response.status === 429)
+          throw new DataProviderError(
+            "rate_limited",
+            "OneAPI 额度或调用频率受限。",
+            true,
+          );
+        if (!response.ok)
+          throw new DataProviderError(
+            "platform_error",
+            "OneAPI 服务暂时不可用。",
+            true,
+          );
+        const payload = parseOneApiJson(await response.text()) as Record<
+          string,
+          any
+        >;
+        if (Number(payload.code) === 301)
+          throw new DataProviderError(
+            "quota_exhausted",
+            "OneAPI 余额不足，请充值后等待下次定时采集。",
+          );
+        if ([401, 403].includes(Number(payload.code)))
+          throw new DataProviderError(
+            "permission_required",
+            "OneAPI 密钥无效或接口权限不足。",
+          );
+        if (Number(payload.code) !== 200 || payload.data == null)
+          throw new DataProviderError(
+            "platform_error",
+            "OneAPI 返回业务错误，请检查服务余额和接口状态。",
+            true,
+          );
+        const data = payload.data;
+        if (data.status_code !== undefined && Number(data.status_code) !== 0)
+          throw invalid();
+        return data;
+      } catch (error) {
+        if (attempt < 2) continue;
+        if (error instanceof DataProviderError)
+          throw new DataProviderError(
+            error.state,
+            `${error.message}（已重试 2 次）`,
+            error.retryable,
+          );
+        const timeout = signal.aborted ||
+          (error instanceof Error && error.name === "TimeoutError");
         throw new DataProviderError(
-          "rate_limited",
-          "OneAPI 额度或调用频率受限。",
+          "network_error",
+          timeout
+            ? "OneAPI 请求超时（每次 30 秒，已重试 2 次）。"
+            : "连接 OneAPI 失败（已重试 2 次），历史数据已保留。",
           true,
         );
-      if (!response.ok)
-        throw new DataProviderError(
-          "platform_error",
-          "OneAPI 服务暂时不可用。",
-          true,
-        );
-      const payload = parseOneApiJson(await response.text()) as Record<
-        string,
-        any
-      >;
-      if (Number(payload.code) === 301)
-        throw new DataProviderError(
-          "quota_exhausted",
-          "OneAPI 余额不足，请充值后等待下次定时采集。",
-        );
-      if ([401, 403].includes(Number(payload.code)))
-        throw new DataProviderError(
-          "permission_required",
-          "OneAPI 密钥无效或接口权限不足。",
-        );
-      if (Number(payload.code) !== 200 || payload.data == null)
-        throw new DataProviderError(
-          "platform_error",
-          "OneAPI 返回业务错误，请检查服务余额和接口状态。",
-          true,
-        );
-      const data = payload.data;
-      if (data.status_code !== undefined && Number(data.status_code) !== 0)
-        throw invalid();
-      return data;
-    } catch (error) {
-      if (error instanceof DataProviderError) throw error;
-      throw new DataProviderError(
-        "network_error",
-        "连接 OneAPI 失败，历史数据已保留，稍后重试。",
-        true,
-      );
+      }
     }
   }
   async profile(profile: string) {
@@ -248,7 +261,9 @@ export class OneApiDataProvider {
     const data = await this.request("fetch_multiple_video_statistics_v2", {
       aweme_ids: ids,
     });
-    // 文档只列出空对象示例，兼容列表及以作品 ID 为键的返回；缺项不补零。
+    // 批量接口直接返回视频对象，单条接口使用 item_id / item 包装；两种格式分别校验。
+    if (data.base_resp?.status_code != null && Number(data.base_resp.status_code) !== 0)
+      throw invalid();
     const rows = Array.isArray(data)
       ? data
       : (data.items ?? data.list ?? data.results);
@@ -312,7 +327,7 @@ export class OneApiDataProvider {
         );
       const byId = new Map<string, any>();
       for (const result of results) {
-        const remoteId = id(result.item_id ?? result.item?.id);
+        const remoteId = id(result.item_id ?? result.item?.id ?? result.id);
         if (
           !rows.some((v: VideoData) => v.remoteId === remoteId) ||
           byId.has(remoteId)

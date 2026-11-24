@@ -210,3 +210,67 @@ test("采集上限在统计查询之前截断，置顶旧视频不占用最新�
   assert.equal(selected[0], video(24).aweme_id);
   assert.ok(!selected.includes(video(0).aweme_id));
 });
+
+test("OneAPI 每次超时30秒，失败重试两次；成功立即结束，最终错误保留类型且不泄漏密钥", async () => {
+  const key = process.env.ONEAPI_API_KEY;
+  const fetcher = globalThis.fetch;
+  const timeout = AbortSignal.timeout;
+  const deadlines: number[] = [];
+  process.env.ONEAPI_API_KEY = "private-retry-key";
+  AbortSignal.timeout = (ms: number) => {
+    deadlines.push(ms);
+    return new AbortController().signal;
+  };
+  try {
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      if (calls < 3) throw Error("private-retry-key");
+      return new Response(JSON.stringify({ code: 200, data: { nickname: "测试" } }));
+    };
+    assert.deepEqual(await new OneApiDataProvider().request("fetch_user_data", {}), { nickname: "测试" });
+    assert.equal(calls, 3);
+    assert.deepEqual(deadlines, [30000, 30000, 30000]);
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return new Response(JSON.stringify({ code: 200, data: {} }));
+    };
+    await new OneApiDataProvider().request("fetch_user_data", {});
+    assert.equal(calls, 1);
+    for (const [state, response] of [
+      ["platform_error", () => new Response("private-retry-key", { status: 503 })],
+      ["quota_exhausted", () => new Response(JSON.stringify({ code: 301, data: null }))],
+    ] as const) {
+      calls = 0;
+      globalThis.fetch = async () => { calls++; return response(); };
+      await assert.rejects(new OneApiDataProvider().request("fetch_user_data", {}), (error: any) =>
+        error.state === state && error.message.includes("已重试 2 次") && !error.message.includes("private-retry-key"));
+      assert.equal(calls, 3);
+    }
+    calls = 0;
+    globalThis.fetch = async () => { calls++; throw new DOMException("private-retry-key", "TimeoutError"); };
+    await assert.rejects(new OneApiDataProvider().request("fetch_user_data", {}), /每次 30 秒，已重试 2 次/);
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = fetcher;
+    AbortSignal.timeout = timeout;
+    if (key === undefined) delete process.env.ONEAPI_API_KEY;
+    else process.env.ONEAPI_API_KEY = key;
+  }
+});
+
+test("抖音满20条批量接口返回直接视频对象，兼容 id/stats 并按精确 ID 匹配乱序结果", async () => {
+  const p = new OneApiDataProvider();
+  const rows = Array.from({length:20}, (_, i) => video(i));
+  p.request = async (path) => path === "fetch_user_video_list"
+    ? {aweme_list:rows, has_more:1, max_cursor:1765876097000}
+    : {base_resp:{status_code:0},items:[...rows].reverse().map((r,i)=>({id:r.aweme_id,stats:{...stats,watch_cnt:String(100+i)}}))};
+  const page = await p.videos(secUid,"63700340656","0",20);
+  assert.equal(page.videos.length,20);
+  assert.equal(page.videos[0].metrics?.views,119n);
+  assert.equal(page.videos[19].metrics?.views,100n);
+  assert.ok(page.videos.every(v=>v.metrics?.collects===154935n));
+  p.request = async () => ({base_resp:{status_code:1},items:[]});
+  await assert.rejects(p.statistics(rows.map(r=>r.aweme_id)),/不完整/);
+});
