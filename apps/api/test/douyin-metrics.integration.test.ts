@@ -63,6 +63,7 @@ test("边界统计保留缺失基线、负增量、新视频累计值和租户�
       likes: views,
       comments: views,
       shares: views,
+      collects: views,
     });
     await db.videoMetricSample.createMany({
       data: [
@@ -111,6 +112,9 @@ test("边界统计保留缺失基线、负增量、新视频累计值和租户�
     assert.equal(stats.size, 5);
     assert.equal(stats.get(videos[0].id)!.views, -10n);
     assert.equal(stats.get(videos[0].id)!.latest_views, 90n);
+    assert.equal(stats.get(videos[0].id)!.collects, -10n);
+    assert.equal(stats.get(videos[0].id)!.latest_collects, 90n);
+    assert.equal(stats.get(videos[2].id)!.collects, null);
     assert.equal(stats.get(videos[1].id)!.views, 50n);
     assert.equal(stats.get(videos[2].id)!.views, null);
     assert.equal(stats.get(videos[3].id)!.views, null);

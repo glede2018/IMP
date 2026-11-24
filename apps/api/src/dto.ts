@@ -74,7 +74,7 @@ export class PageDto {
 }
 export class AccountDto {
   @IsString() @Length(1, 100) @ApiProperty({ type: String }) nickname!: string;
-  @IsString() @Length(1, 100) @ApiProperty({ type: String }) accountId!: string;
+  @IsString() @Length(1, 512) @ApiProperty({ type: String }) accountId!: string;
   @IsIn(["douyin", "xiaohongshu", "kuaishou", "shipinhao"])
   @ApiProperty({ type: String })
   platform!: string;

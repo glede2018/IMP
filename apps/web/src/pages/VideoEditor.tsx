@@ -92,7 +92,6 @@ function CreationForm({ context }: { context: CreationContext }) {
   const [slotMaterials, setSlotMaterials] = useState<
     Record<string, PickMaterial>
   >({});
-  const [slotFiles, setSlotFiles] = useState<Record<string, string>>({});
   const [pickerSlot, setPickerSlot] = useState<string | null>(null);
   const navigate = useNavigate();
   const { message } = App.useApp();
@@ -138,9 +137,6 @@ function CreationForm({ context }: { context: CreationContext }) {
       for (const slot of workflow?.slots || [])
         slotValues[slot.nodeId] = {
           materialId: slotMaterials[slot.nodeId].id,
-          ...(slotFiles[slot.nodeId]
-            ? { assetId: slotFiles[slot.nodeId] }
-            : {}),
         };
       const result = await saveCreation(template.id, {
         title: v.title,
@@ -264,42 +260,7 @@ function CreationForm({ context }: { context: CreationContext }) {
                         setPicker(slot.materialType as "product" | "person");
                       }}
                     />
-                    {slot.field === "image" && slotMaterials[slot.nodeId] && (
-                      <Select
-                        aria-label={`${slot.label}使用图片`}
-                        className="w-full !mt-2"
-                        value={
-                          slotFiles[slot.nodeId] ||
-                          slotMaterials[slot.nodeId].files.find((f) =>
-                            f.mimeType.startsWith("image/"),
-                          )?.id
-                        }
-                        onChange={(id) => {
-                          setSlotFiles((prev) => ({
-                            ...prev,
-                            [slot.nodeId]: id,
-                          }));
-                          changed();
-                        }}
-                        options={slotMaterials[slot.nodeId].files
-                          .filter((f) => f.mimeType.startsWith("image/"))
-                          .map((f, i) => ({
-                            value: f.id,
-                            label: (
-                              <Space>
-                                <Image
-                                  src={f.url}
-                                  width={32}
-                                  height={32}
-                                  preview={false}
-                                  style={{ objectFit: "cover" }}
-                                />
-                                {f.label || `图片 ${i + 1}`}
-                              </Space>
-                            ),
-                          }))}
-                      />
-                    )}
+
                   </div>
                 ))}
               </Space>
@@ -485,12 +446,7 @@ function CreationForm({ context }: { context: CreationContext }) {
           onSave={(rows) => {
             if (pickerSlot) {
               setSlotMaterials((prev) => ({ ...prev, [pickerSlot]: rows[0] }));
-              setSlotFiles((prev) => ({
-                ...prev,
-                [pickerSlot]:
-                  rows[0]?.files.find((f) => f.mimeType.startsWith("image/"))
-                    ?.id || "",
-              }));
+
             } else if (picker === "person") setPerson(rows[0] || null);
             else setProducts(rows);
             setPicker(null);

@@ -1,4 +1,11 @@
 import {
+  isSocialPlatform,
+  socialPlatforms,
+  SocialOneApiProvider,
+  type SocialProfile,
+} from "./social-oneapi.js";
+import { metricSource, nextDailySync, oneapiEnabled, videoSyncLimit } from "./oneapi.js";
+import {
   templateTagBindings,
   matchVideoTags,
   videoTagBinding,
@@ -24,7 +31,11 @@ import { IsIn, IsOptional, IsString, Length, Matches } from "class-validator";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { Database } from "./database.js";
-import { accountWindowMetrics, videoWindowMetrics } from "./douyin-metrics.js";
+import {
+  accountWindowMetrics,
+  videoWindowMetrics,
+  videoDailyViews,
+} from "./douyin-metrics.js";
 import { SessionGuard, type AuthRequest } from "./auth.js";
 import { hasPermission, permissionsFor } from "./permissions.js";
 import { DouyinService } from "./douyin.js";
@@ -38,6 +49,7 @@ import {
   shanghaiDate,
 } from "./douyin-data-provider.js";
 class DateQuery {
+  @IsOptional() @IsIn(["all", ...socialPlatforms]) platform?: string;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) start?: string;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) end?: string;
   @IsOptional() @IsString() @Length(1, 100) accountId?: string;
@@ -72,6 +84,7 @@ export function dateRange(query: { start?: string; end?: string }) {
   return { start, end, first, last: new Date(last.getTime() + 86400000) };
 }
 const terminalStates = [
+  "quota_exhausted",
   "unsupported",
   "permission_required",
   "authorization_required",
@@ -82,6 +95,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private busy = false;
   private discoveryCursor?: string;
+  private social = new SocialOneApiProvider();
   constructor(
     private db: Database,
     private source: DouyinDataProvider,
@@ -98,19 +112,26 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
   }
   async status(org: string) {
     const accounts = await this.db.account.findMany({
-      where: { organizationId: org, platform: "douyin" },
+      where: {
+        organizationId: org,
+        platform: oneapiEnabled() ? { in: [...socialPlatforms] } : "douyin",
+      },
       include: { authorization: true, syncStates: true },
       orderBy: { bindTime: "desc" },
     });
     return accounts.map((a) => ({
       id: a.id,
       name: a.nickname,
+      platform: a.platform,
       type: a.tier,
-      mode: a.authorization?.mode || "none",
+      mode:
+        a.dataProvider === "oneapi"
+          ? "oneapi"
+          : a.authorization?.mode || "none",
       scopes: a.authorization?.scopes || [],
       states: ["videos", "fans"].map((kind) => {
         const saved = a.syncStates.find((s) => s.kind === kind);
-        const reason = this.blocked(a.authorization, kind);
+        const reason = this.accountBlocked(a, kind);
         return {
           kind,
           status: reason ? "blocked" : saved?.status || "idle",
@@ -123,6 +144,29 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         };
       }),
     }));
+  }
+  private accountBlocked(
+    account: {
+      dataProfile?: string | null;
+      dataProvider?: string | null;
+      platform?: string;
+      authorization?: any;
+    },
+    kind: string,
+  ) {
+    if (oneapiEnabled()) {
+      if (account.platform && !isSocialPlatform(account.platform))
+        return "不支持此平台采集";
+      if (account.dataProvider !== "oneapi") {
+        if (account.authorization?.mode !== "live")
+          return "请先通过 OneAPI 查询并确认绑定账号。";
+        if (account.authorization.refreshExpiresAt <= new Date())
+          return "请重新通过 OneAPI 确认账号信息。";
+      }
+      if (!account.dataProfile) return "请添加平台用户 ID 或主页分享链接。";
+      return this.social.availability();
+    }
+    return this.blocked(account.authorization ?? null, kind);
   }
   private blocked(
     auth: {
@@ -150,12 +194,16 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
   }
   async enqueue(org: string, accountId: string) {
     const account = await this.db.account.findFirst({
-      where: { id: accountId, organizationId: org, platform: "douyin" },
+      where: {
+        id: accountId,
+        organizationId: org,
+        platform: oneapiEnabled() ? { in: [...socialPlatforms] } : "douyin",
+      },
       include: { authorization: true },
     });
-    if (!account) throw new NotFoundException("抖音账号不存在");
+    if (!account) throw new NotFoundException("账号不存在");
     for (const kind of ["videos", "fans"]) {
-      const reason = this.blocked(account.authorization, kind);
+      const reason = this.accountBlocked(account, kind);
       await this.db.douyinSyncState.upsert({
         where: { accountId_kind: { accountId, kind } },
         create: {
@@ -171,7 +219,12 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       });
       if (state.leaseUntil && state.leaseUntil > new Date()) continue;
       // Repeated clicks never bypass platform cooldown; failed terminal capabilities require explicit retry after configuration changes.
-      if (!reason && state.nextAttemptAt && state.nextAttemptAt > new Date())
+      if (
+        !reason &&
+        state.nextAttemptAt &&
+        state.nextAttemptAt > new Date() &&
+        (state.lastSuccessAt || state.failures > 0)
+      )
         continue;
       await this.db.douyinSyncState.updateMany({
         where: {
@@ -187,6 +240,15 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
     }
     return this.status(org);
   }
+  async initializeAccount(accountId: string) {
+    // 复用定时任务的执行与租约机制，防止后台扫描和初始化重复采集。
+    for (const kind of ["fans", "videos"]) {
+      const state = await this.db.douyinSyncState.findUnique({
+        where: { accountId_kind: { accountId, kind } },
+      });
+      if (state?.status === "queued") await this.run(state.id);
+    }
+  }
   async tick() {
     if (this.busy) return;
     this.busy = true;
@@ -194,13 +256,22 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       const now = new Date();
       // 显式启用能力后分页发现账号，每轮推进游标，避免只处理前一百个账号。
       if (
+        oneapiEnabled() ||
         process.env.DOUYIN_FANS_SYNC_ENABLED === "true" ||
         process.env.DOUYIN_VIDEO_API_PROFILE === "website_v1"
       ) {
         const accounts = await this.db.account.findMany({
           where: {
-            platform: "douyin",
-            authorization: { is: { mode: "live" } },
+            platform: oneapiEnabled() ? { in: [...socialPlatforms] } : "douyin",
+            ...(oneapiEnabled()
+              ? {
+                  dataProfile: { not: null },
+                  OR: [
+                    { dataProvider: "oneapi" },
+                    { authorization: { is: { mode: "live" } } },
+                  ],
+                }
+              : { authorization: { is: { mode: "live" } } }),
             ...(this.discoveryCursor
               ? { id: { gt: this.discoveryCursor } }
               : {}),
@@ -211,10 +282,17 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         });
         for (const a of accounts)
           for (const kind of ["videos", "fans"])
-            if (!this.blocked(a.authorization, kind))
+            if (!this.accountBlocked(a, kind))
               await this.db.douyinSyncState.upsert({
                 where: { accountId_kind: { accountId: a.id, kind } },
-                create: { accountId: a.id, kind, status: "queued" },
+                create: {
+                  accountId: a.id,
+                  kind,
+                  status: "queued",
+                  ...(oneapiEnabled()
+                    ? { nextAttemptAt: nextDailySync() }
+                    : {}),
+                },
                 update: {},
               });
         this.discoveryCursor =
@@ -222,7 +300,13 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       }
       const states = await this.db.douyinSyncState.findMany({
         where: {
-          status: { notIn: terminalStates },
+          OR: [
+            { status: { notIn: terminalStates } },
+            {
+              account: { dataProvider: "oneapi" },
+              nextAttemptAt: { lte: now },
+            },
+          ],
           AND: [
             { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
             { OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] },
@@ -251,7 +335,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       },
       data: {
         runId,
-        leaseUntil: new Date(Date.now() + 120000),
+        leaseUntil: new Date(Date.now() + 600000),
         status: "running",
         lastAttemptAt: now,
         message: "正在同步",
@@ -271,24 +355,29 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         data: { ...data, runId: null, leaseUntil: null },
       });
     try {
-      let auth = state.account.authorization;
-      const reason = this.blocked(auth, state.kind);
+      const thirdParty = oneapiEnabled();
+      const reason = this.accountBlocked(state.account, state.kind);
       if (reason) throw new DataProviderError("blocked", reason);
-      await this.oauth.refreshAccount(state.accountId);
-      auth = await this.db.accountAuthorization.findUnique({
-        where: { accountId: state.accountId },
-      });
-      const refreshedReason = this.blocked(auth, state.kind);
-      if (refreshedReason || !auth?.accessTokenCiphertext)
-        throw new DataProviderError(
-          "authorization_required",
-          refreshedReason || "请重新授权",
+      let token = "";
+      let credential = state.account.authorization;
+      if (!thirdParty) {
+        await this.oauth.refreshAccount(state.accountId);
+        credential = await this.db.accountAuthorization.findUnique({
+          where: { accountId: state.accountId },
+        });
+        const refreshedReason = this.blocked(credential, state.kind);
+        if (refreshedReason || !credential?.accessTokenCiphertext)
+          throw new DataProviderError(
+            "authorization_required",
+            refreshedReason || "请重新授权",
+          );
+        token = decryptToken(
+          credential.accessTokenCiphertext,
+          `douyin:${credential.clientKey}:${credential.openId}:access`,
         );
-      const credential = auth;
-      const token = decryptToken(
-        credential.accessTokenCiphertext!,
-        `douyin:${credential.clientKey}:${credential.openId}:access`,
-      );
+      }
+      let secUid = state.account.dataSecUid;
+      let uid = state.account.dataUid;
       let capturedAt = new Date();
       const transaction = async (
         write: (tx: Prisma.TransactionClient) => Promise<void>,
@@ -297,7 +386,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           async (tx) => {
             const lease = await tx.douyinSyncState.updateMany({
               where: { id, runId, leaseUntil: { gt: new Date() } },
-              data: { leaseUntil: new Date(Date.now() + 120000) },
+              data: { leaseUntil: new Date(Date.now() + 600000) },
             });
             if (!lease.count)
               throw new DataProviderError(
@@ -305,32 +394,110 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
                 "同步租约已失效。",
                 true,
               );
-            const valid = await tx.accountAuthorization.updateMany({
-              where: {
-                accountId: state.accountId,
-                revision: credential.revision,
-                mode: "live",
-              },
-              data: { lastVerifiedAt: credential.lastVerifiedAt },
-            });
+            const valid = thirdParty
+              ? await tx.account.updateMany({
+                  where: {
+                    id: state.accountId,
+                    organizationId: state.account.organizationId,
+                    platform: state.account.platform,
+                    dataProfile: state.account.dataProfile,
+                    ...(state.account.dataProvider === "oneapi"
+                      ? {
+                          dataProvider: "oneapi",
+                          dataRevision: state.account.dataRevision,
+                        }
+                      : {
+                          authorization: {
+                            is: {
+                              mode: "live",
+                              revision: credential!.revision,
+                              refreshExpiresAt: { gt: new Date() },
+                            },
+                          },
+                        }),
+                  },
+                  data: { updatedAt: new Date() },
+                })
+              : await tx.accountAuthorization.updateMany({
+                  where: {
+                    accountId: state.accountId,
+                    revision: credential!.revision,
+                    mode: "live",
+                  },
+                  data: { lastVerifiedAt: credential!.lastVerifiedAt },
+                });
             if (!valid.count)
               throw new DataProviderError(
                 "authorization_required",
-                "授权在同步期间发生变化，请重新同步。",
+                "账号配置在同步期间发生变化，请重新同步。",
               );
             await write(tx);
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         );
+      // 视频分页复用解析后的身份；粉丝任务每天刷新一次用户资料。
+      let profile: SocialProfile | undefined;
+      if (thirdParty && (state.kind === "fans" || !secUid || !uid)) {
+        if (!isSocialPlatform(state.account.platform))
+          throw new DataProviderError("unsupported", "不支持该平台");
+        profile = await this.social.profile(
+          state.account.platform,
+          state.account.dataProfile!,
+        );
+        if (
+          (secUid && profile.secUid !== secUid) ||
+          (uid && profile.uid !== uid)
+        )
+          throw new DataProviderError(
+            "invalid_response",
+            "采集主页对应用户已变更，已停止同步。",
+          );
+        secUid = profile.secUid;
+        uid = profile.uid;
+        await transaction(async (tx) => {
+          if (
+            await tx.account.findFirst({
+              where: {
+                organizationId: state.account.organizationId,
+                platform: state.account.platform,
+                dataUid: uid,
+                id: { not: state.accountId },
+              },
+              select: { id: true },
+            })
+          )
+            throw new DataProviderError(
+              "invalid_response",
+              "该采集主页已绑定其他账号，请检查账号配置。",
+            );
+          await tx.account.update({
+            where: { id: state.accountId },
+            data: {
+              dataSecUid: secUid,
+              dataUid: uid,
+              nickname: profile!.nickname,
+              ...(profile!.avatar ? { avatar: profile!.avatar } : {}),
+            },
+          });
+        });
+      }
       if (state.kind === "fans") {
-        const fans = await this.source.fans(token, credential.openId);
+        const fans = thirdParty
+          ? profile!.fans
+          : await this.source.fans(token, credential!.openId);
         capturedAt = new Date();
         const bucket = bucketFor(capturedAt);
         await transaction(async (tx) => {
           await tx.accountMetricSample.upsert({
             where: { accountId_bucket: { accountId: state.accountId, bucket } },
-            create: { accountId: state.accountId, bucket, capturedAt, fans },
-            update: { capturedAt, fans },
+            create: {
+              accountId: state.accountId,
+              bucket,
+              capturedAt,
+              fans,
+              source: metricSource(),
+            },
+            update: { capturedAt, fans, source: metricSource() },
           });
         });
         processed = 1;
@@ -340,7 +507,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           processed,
           failures: 0,
           lastSuccessAt: capturedAt,
-          nextAttemptAt: new Date(Date.now() + 3600000),
+          nextAttemptAt: nextDailySync(),
         });
       } else {
         if (state.cursor === "0")
@@ -348,15 +515,28 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
             where: { id, runId },
             data: { processed: 0 },
           });
+        const limit = videoSyncLimit();
+        let total = state.cursor === "0" ? 0 : state.processed;
         let cursor = state.cursor,
-          hasMore = true,
+          hasMore = total < limit,
           missing = false;
         for (let page = 0; page < 3 && hasMore; page++) {
-          const result = await this.source.videos(
-            token,
-            credential.openId,
-            cursor,
-          );
+          const result = thirdParty
+            ? await this.social.videos(
+                state.account
+                  .platform as import("./social-oneapi.js").SocialPlatform,
+                secUid!,
+                uid!,
+                cursor,
+                limit - total,
+              )
+            : await this.source.videos(token, credential!.openId, cursor);
+          // 到达上限后结束本轮，历史视频不再查询或更新指标。
+          result.videos = result.videos
+            .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+            .slice(0, limit - total);
+          total += result.videos.length;
+          const continuePaging = result.hasMore && total < limit;
           capturedAt = new Date();
           const bucket = bucketFor(capturedAt);
           await transaction(async (tx) => {
@@ -394,14 +574,18 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
                   organizationId: state.account.organizationId,
                   accountId: state.accountId,
                   remoteId: v.remoteId,
+                  source: metricSource(),
                   title: v.title,
+                  ...(v.coverUrl ? { coverUrl: v.coverUrl } : {}),
                   tags: v.tags,
                   publishedAt: v.publishedAt,
                   lastSeenAt: capturedAt,
                   ...match,
                 },
                 update: {
+                  source: metricSource(),
                   title: v.title,
+                  ...(v.coverUrl ? { coverUrl: v.coverUrl } : {}),
                   tags: v.tags,
                   publishedAt: v.publishedAt,
                   lastSeenAt: capturedAt,
@@ -416,21 +600,22 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
                     bucket,
                     capturedAt,
                     ...v.metrics,
+                    source: metricSource(),
                   },
-                  update: { capturedAt, ...v.metrics },
+                  update: { capturedAt, ...v.metrics, source: metricSource() },
                 });
               else missing = true;
             }
             await tx.douyinSyncState.updateMany({
               where: { id, runId },
               data: {
-                cursor: result.hasMore ? result.cursor : "0",
+                cursor: continuePaging ? result.cursor : "0",
                 processed: { increment: result.videos.length },
               },
             });
           });
           cursor = result.cursor;
-          hasMore = result.hasMore;
+          hasMore = continuePaging;
           processed += result.videos.length;
         }
         await settle({
@@ -441,8 +626,11 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
               ? "列表已同步，部分视频暂无指标；保留历史快照。"
               : "视频与指标快照已同步。",
           ...(!hasMore ? { lastSuccessAt: capturedAt } : {}),
+          ...(!hasMore ? { cursor: "0" } : {}),
           failures: 0,
-          nextAttemptAt: new Date(Date.now() + (hasMore ? 60000 : 3600000)),
+          nextAttemptAt: hasMore
+            ? new Date(Date.now() + 60000)
+            : nextDailySync(),
         });
       }
     } catch (error) {
@@ -456,14 +644,23 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
             );
       await settle({
         status: e.state,
+        ...(oneapiEnabled() ? { cursor: "0" } : {}),
         message: e.message,
         failures: { increment: 1 },
-        nextAttemptAt: new Date(
-          Date.now() +
-            (e.retryable
-              ? Math.min(3600000, 60000 * 2 ** Math.min(state.failures, 6))
-              : 3600000),
-        ),
+        nextAttemptAt:
+          state.account.dataProvider === "oneapi"
+            ? nextDailySync()
+            : terminalStates.includes(e.state)
+              ? null
+              : new Date(
+                  Date.now() +
+                    (e.retryable
+                      ? Math.min(
+                          3600000,
+                          60000 * 2 ** Math.min(state.failures, 6),
+                        )
+                      : 3600000),
+                ),
       });
     }
   }
@@ -543,7 +740,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${org + ":tags"}))`;
         const bindings = await templateTagBindings(tx, org);
         const videos = await tx.platformVideo.findMany({
-          where: { organizationId: org },
+          where: { organizationId: org, source: metricSource() },
           include: {
             binding: true,
             templateTagBinding: { include: { tag: true } },
@@ -569,7 +766,16 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
     const range = dateRange(query);
     const filter: Prisma.AccountWhereInput = {
       organizationId: org,
-      platform: "douyin",
+      platform: oneapiEnabled()
+        ? query.platform && query.platform !== "all"
+          ? query.platform
+          : { in: [...socialPlatforms] }
+        : "douyin",
+      // 演示授权账号不参与真实数据中心的汇总。
+      OR: [
+        { dataProvider: "oneapi" },
+        { NOT: { authorization: { is: { mode: "demo" } } } },
+      ],
       ...(query.accountId && query.accountId !== "all"
         ? { id: query.accountId }
         : {}),
@@ -582,6 +788,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
     const count = await this.db.platformVideo.count({
       where: {
         organizationId: org,
+        source: metricSource(),
         accountId: { in: accounts.map((a) => a.id) },
         publishedAt: { lt: range.last },
       },
@@ -593,6 +800,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
     const records = await this.db.platformVideo.findMany({
       where: {
         organizationId: org,
+        source: metricSource(),
         accountId: { in: accounts.map((a) => a.id) },
         publishedAt: { lt: range.last },
       },
@@ -626,7 +834,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       .map((v) => {
         const binding = videoTagBinding(v);
         const window = videoStats.get(v.id);
-        const fields = ["views", "likes", "comments", "shares"] as const;
+        const fields = ["views", "likes", "comments", "shares", "collects"] as const;
         const metrics = Object.fromEntries(
           fields.map((key) => [
             key,
@@ -637,6 +845,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           id: v.id,
           remoteId: v.remoteId,
           title: v.title,
+          coverUrl: v.coverUrl,
           accountId: v.accountId,
           publishedAt: v.publishedAt,
           tags: v.tags,
@@ -657,7 +866,12 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           capturedAt: window?.capturedAt || null,
           latest: window?.capturedAt
             ? Object.fromEntries(
-                fields.map((key) => [key, Number(window[`latest_${key}`])]),
+                fields.map((key) => [
+                  key,
+                  window[`latest_${key}`] == null
+                    ? null
+                    : Number(window[`latest_${key}`]),
+                ]),
               )
             : null,
         };
@@ -696,6 +910,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       return {
         id: a.id,
         name: a.nickname,
+        platform: a.platform,
         type: a.tier,
         store: a.store?.name || null,
         published: own.filter((v) => v.publishedAt >= range.first).length,
@@ -705,12 +920,117 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         netFans: window?.netFans == null ? null : Number(window.netFans),
       };
     });
+    const allAccounts =
+      (!query.accountId || query.accountId === "all") &&
+      (!query.type || query.type === "all") &&
+      (!query.platform || query.platform === "all");
+    const creationWhere = {
+      organizationId: org,
+      createdAt: { gte: range.first, lt: range.last },
+    };
+    const previousRange = {
+      first: new Date(
+        range.first.getTime() - (range.last.getTime() - range.first.getTime()),
+      ),
+      last: range.first,
+    };
+    const previousVideos = records.filter(
+      (v) => v.publishedAt < previousRange.last,
+    );
+    const [
+      trend,
+      generated,
+      pending,
+      failed,
+      previousVideoStats,
+      previousFanStats,
+      generatedByTemplate,
+    ] = await Promise.all([
+      videoDailyViews(
+        this.db,
+        org,
+        records.map((v) => v.id),
+        range,
+      ),
+      allAccounts
+        ? this.db.work.count({
+            where: { ...creationWhere, creationId: { not: null } },
+          })
+        : null,
+      allAccounts
+        ? this.db.videoCreationDraft.count({
+            where: {
+              ...creationWhere,
+              status: { in: ["awaiting_provider", "queued", "generating"] },
+            },
+          })
+        : null,
+      allAccounts
+        ? this.db.videoCreationDraft.count({
+            where: { ...creationWhere, status: "failed" },
+          })
+        : null,
+      videoWindowMetrics(
+        this.db,
+        org,
+        previousVideos.map((v) => v.id),
+        previousRange,
+      ),
+      accountWindowMetrics(
+        this.db,
+        org,
+        accounts.map((a) => a.id),
+        previousRange,
+      ),
+      allAccounts
+        ? this.db.$queryRaw<
+            { templateId: string; revision: number; count: number }[]
+          >(Prisma.sql`
+        SELECT c."templateId", c.revision, COUNT(w.id)::int AS count
+        FROM "Work" w JOIN "VideoCreationDraft" c ON c.id=w."creationId"
+        WHERE w."organizationId"=${org} AND c."organizationId"=${org}
+          AND w."createdAt" >= ${range.first} AND w."createdAt" < ${range.last}
+        GROUP BY c."templateId", c.revision
+      `)
+        : null,
+    ]);
+    const workCounts = new Map(
+      (generatedByTemplate || []).map((row) => [
+        JSON.stringify([row.templateId, `v${row.revision}`]),
+        row.count,
+      ]),
+    );
     const bindings = [...canonical.values()];
     return {
       source: "live",
+      content: {
+        generated,
+        pending,
+        failed,
+        publishedWorks: null,
+        playedWorks: null,
+        pendingPublish: null,
+        trend,
+        previous: {
+          published: previousVideos.filter(
+            (v) => v.publishedAt >= previousRange.first,
+          ).length,
+          views: sum(
+            [...previousVideoStats.values()].map((v) =>
+              v.views == null ? null : Number(v.views),
+            ),
+          ),
+          netFans: sum(
+            [...previousFanStats.values()].map((a) =>
+              a.netFans == null ? null : Number(a.netFans),
+            ),
+          ),
+        },
+      },
       ...{ start: range.start, end: range.end },
-      basis:
-        "采集快照观察增量；不等同于平台按自然日统计。首次采集缺少期初基线时显示—。粉丝来源可能含抖音极速版及火山。",
+      basis: oneapiEnabled()
+        ? "OneAPI 多平台采集；每日北京时间 00:00 更新，区间增量按各平台快照计算。"
+        : "采集快照观察增量；不等同于平台按自然日统计。首次采集缺少期初基线时显示—。粉丝来源可能含抖音极速版及火山。",
       accounts: accountRows,
       videos,
       summary: {
@@ -733,6 +1053,9 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           title: b.titleSnapshot,
           version: b.version,
           tag: b.tag,
+          works: allAccounts
+            ? workCounts.get(JSON.stringify([b.templateId, b.version])) || 0
+            : null,
           published: own.filter((v) => v.publishedAt >= range.first).length,
           videoCount: own.length,
           accounts: new Set(own.map((v) => v.accountId)).size,
@@ -755,7 +1078,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 }
-@Controller("analytics/douyin")
+@Controller(["analytics/social", "analytics/douyin"])
 @UseGuards(SessionGuard)
 export class DouyinAnalyticsController {
   constructor(private service: DouyinAnalyticsService) {}
@@ -769,6 +1092,8 @@ export class DouyinAnalyticsController {
   ) {
     permission(req, "analytics");
     permission(req, "accounts:write");
+    if (oneapiEnabled())
+      throw new BadRequestException("平台数据每天北京时间 0 点自动采集");
     return this.service.enqueue(req.user.organizationId, id);
   }
   @Get("overview") overview(

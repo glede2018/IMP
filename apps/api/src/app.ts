@@ -1,3 +1,5 @@
+import { SocialAccountsController } from "./social-accounts.js";
+import { AccountDataController } from "./account-data.js";
 import { TemplatePreviewsController } from "./template-previews.js";
 import {
   ModelGenerations,
@@ -118,6 +120,7 @@ class ErrorFilter implements ExceptionFilter {
 @Module({
   imports: [ThrottlerModule.forRoot([{ ttl: 60000, limit: 120 }])],
   controllers: [
+    SocialAccountsController,
     WorksLibraryController,
     TemplateCreationsController,
     TagsController,
@@ -131,6 +134,7 @@ class ErrorFilter implements ExceptionFilter {
     HealthController,
     DouyinController,
     AuthController,
+    AccountDataController,
     AccountsController,
     AssetsController,
     TemplatesController,

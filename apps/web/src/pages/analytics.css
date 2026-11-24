@@ -148,3 +148,404 @@
 .dc-negative.ant-typography {
   color: #b56b5a;
 }
+
+/* 内容运营按业务概览布局展示，模块间距统一为 16px。 */
+.dc-content-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dc-content-overview .ant-card {
+  border-color: #eeeae4;
+  border-radius: 16px;
+}
+.dc-content-muted {
+  color: #969088;
+  font-size: 14px;
+  font-weight: 400;
+}
+.dc-content-stat {
+  height: 100%;
+  min-height: 195px;
+}
+.dc-content-stat .ant-card-body {
+  padding: 22px;
+}
+.dc-content-stat-value {
+  font-size: 34px;
+  line-height: 1.4;
+  color: #302e2a;
+  font-weight: 600;
+  margin: 18px 0 10px;
+  letter-spacing: -0.6px;
+}
+.dc-content-stat-value small {
+  font-size: 14px;
+  color: #8f887f;
+  margin-left: 8px;
+  letter-spacing: 0;
+}
+.dc-content-stat-detail {
+  font-size: 13px;
+  color: #969088;
+  line-height: 1.9;
+}
+.dc-content-comparison {
+  margin-bottom: 6px;
+}
+.dc-content-split {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dc-content-overview .dc-panel .ant-card-head {
+  min-height: 64px;
+  padding: 0 22px;
+}
+.dc-content-overview .dc-panel .ant-card-head-title {
+  font-size: 18px;
+  color: #39352f;
+}
+.dc-content-overview .dc-panel .ant-card-body {
+  padding: 0 22px 24px;
+}
+.dc-content-funnel {
+  padding-top: 2px;
+}
+.dc-content-funnel-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  min-height: 44px;
+  margin-bottom: 10px;
+  background: #f8f4ef;
+  border-radius: 6px;
+  overflow: hidden;
+  color: #403a32;
+}
+.dc-content-funnel-row > span,
+.dc-content-funnel-row > strong {
+  position: relative;
+  z-index: 1;
+}
+.dc-content-funnel-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #f3d2af;
+}
+.dc-content-funnel-rates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  padding: 7px 0 22px;
+  color: #615c55;
+}
+.dc-content-funnel-rates b {
+  color: #cd7c42;
+  font-weight: 500;
+}
+.dc-content-chart {
+  height: 230px;
+  position: relative;
+}
+.dc-content-chart-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #a29b91;
+  pointer-events: none;
+  font-size: 13px;
+}
+.dc-content-rank-grid .dc-panel {
+  min-height: 345px;
+}
+.dc-content-ranks .ant-list-item {
+  padding: 22px 0;
+  border-block-end-color: #f1eeea;
+}
+.dc-content-rank-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+.dc-content-rank-row > .dc-rank {
+  padding-top: 9px;
+  font-size: 14px;
+}
+.dc-content-rank-copy {
+  min-width: 0;
+  flex: 1;
+}
+.dc-content-rank-name.ant-btn {
+  padding: 0;
+  height: auto;
+  white-space: normal;
+  text-align: left;
+  color: #514b43;
+  line-height: 1.7;
+}
+.dc-content-rank-copy .dc-content-muted {
+  line-height: 1.8;
+  font-size: 13px;
+}
+.dc-content-rank-value {
+  font-size: 20px;
+  margin-top: 10px;
+  color: #4c4841;
+}
+.dc-content-rank-value > span {
+  margin-left: 6px;
+  font-size: 13px;
+  color: #969088;
+}
+.dc-content-play.ant-btn {
+  width: 36px;
+  min-width: 36px;
+  height: 54px;
+  border: 0;
+  color: white;
+  background: linear-gradient(145deg, #e5d4af, #be9668);
+  border-radius: 7px;
+}
+.dc-content-todos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 18px 22px;
+  background: #efece6;
+  color: #938875;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.dc-page > .ant-space {
+  display: block;
+}
+.dc-page > .ant-space > .ant-space-item {
+  width: 100%;
+}
+@media (max-width: 767px) {
+  .dc-content-stat {
+    min-height: 180px;
+  }
+  .dc-content-stat-value {
+    font-size: 29px;
+  }
+  .dc-content-todos {
+    gap: 12px;
+  }
+}
+.dc-content-comparison.is-positive {
+  color: #629b80;
+}
+.dc-content-comparison.is-negative {
+  color: #b56b5a;
+}
+.dc-content-overview .dc-panel .ant-card-head {
+  border-bottom: 0;
+}
+.dc-content-page .dc-filters .ant-picker,
+.dc-content-page .dc-filters .ant-select-selector {
+  background: #f2eee7;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* 数据中心明细页面使用统一的指标卡、表格和卡片内分区。 */
+.dc-performance-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dc-performance-page .ant-card {
+  border-color: #eeeae4;
+  border-radius: 16px;
+}
+.dc-performance-stat {
+  height: 100%;
+  min-height: 180px;
+}
+.dc-performance-stat .ant-card-body {
+  padding: 22px;
+}
+.dc-performance-stat .dc-content-stat-detail {
+  min-height: 25px;
+}
+.dc-performance-page .dc-panel .ant-card-head {
+  border-bottom: 0;
+  padding: 0 24px;
+  min-height: 72px;
+}
+.dc-performance-page .dc-panel .ant-card-head-title {
+  font-size: 18px;
+}
+.dc-performance-page .dc-panel .ant-card-body {
+  padding: 0 24px 24px;
+}
+.dc-performance-page .ant-table-thead > tr > th {
+  background: #faf8f5;
+  font-size: 14px;
+}
+.dc-performance-page .ant-table-thead > tr > th::before {
+  display: none;
+}
+.dc-performance-page .ant-table-tbody > tr > td {
+  border-bottom-color: #f1eeea;
+}
+.dc-performance-page .ant-table-cell {
+  padding: 20px 12px !important;
+}
+.dc-performance-page .dc-text-button {
+  color: #c87840;
+  font-size: 14px;
+}
+.dc-performance-page .dc-table-subtitle {
+  font-size: 12px;
+  margin-top: 2px;
+}
+.dc-performance-badge {
+  display: inline-block;
+  color: #9b8b73;
+  font-size: 13px;
+  padding: 6px 10px;
+  background: #f2eee7;
+  border-radius: 6px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.dc-performance-detail {
+  border-top: 1px solid #f0ece6;
+  margin-top: 20px;
+  padding-top: 20px;
+}
+.dc-performance-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.dc-performance-section-head h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: #39352f;
+}
+.dc-performance-video-title.ant-btn {
+  height: auto;
+  padding: 0;
+  white-space: normal;
+  text-align: left;
+  color: #514b43;
+  max-width: 280px;
+  line-height: 1.7;
+}
+.dc-performance-play.ant-btn {
+  flex-shrink: 0;
+  width: 44px;
+  min-width: 44px;
+  height: 56px;
+  border: 0;
+  color: white;
+  background: linear-gradient(145deg, #e5d4af, #be9668);
+  border-radius: 7px;
+}
+.dc-video-template {
+  font-size: 12px;
+  margin-top: 4px;
+}
+.dc-performance-placeholder {
+  min-height: 110px;
+  display: grid;
+  place-items: center;
+  background: #faf8f5;
+  border-radius: 12px;
+  color: #999187;
+}
+.dc-business-metrics {
+  padding: 12px 0 8px;
+}
+.dc-business-metrics > .ant-col:not(:last-child) {
+  border-right: 1px solid #f0ece6;
+}
+.dc-business-metrics .dc-content-stat-value {
+  margin-bottom: 0;
+}
+.dc-business-funnel {
+  padding-top: 4px;
+  min-height: 250px;
+}
+.dc-performance-stack > .ant-row > .ant-col > .dc-panel {
+  height: 100%;
+  min-height: 300px;
+}
+@media (max-width: 767px) {
+  .dc-performance-page .dc-panel .ant-card-body {
+    padding: 0 16px 16px;
+  }
+  .dc-performance-page .dc-panel .ant-card-head {
+    padding: 0 16px;
+  }
+  .dc-business-metrics > .ant-col {
+    border-right: 0 !important;
+  }
+}
+
+/* 覆盖全局 Ant Design 强制样式，使数据中心与参考页面保持一致。 */
+.dc-page .ant-card {
+  border-radius: 16px !important;
+  box-shadow: none !important;
+}
+.dc-performance-page .dc-panel .ant-card-head {
+  border-bottom: 0 !important;
+  padding: 0 24px !important;
+  min-height: 72px !important;
+}
+.dc-performance-page .dc-panel .ant-card-head-title {
+  font-size: 18px !important;
+}
+.dc-performance-page .dc-panel .ant-card-body {
+  padding: 0 24px 24px !important;
+}
+.dc-performance-page .dc-performance-stat .ant-card-body,
+.dc-performance-page .dc-content-stat .ant-card-body {
+  padding: 22px !important;
+}
+.dc-performance-page .dc-performance-play.ant-btn,
+.dc-performance-page .dc-content-play.ant-btn {
+  height: 56px !important;
+  width: 44px;
+  min-width: 44px;
+  padding: 0 !important;
+  background: linear-gradient(145deg, #e5d4af, #be9668) !important;
+  color: #fff !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+}
+.dc-performance-page .dc-performance-video-title.ant-btn,
+.dc-performance-page .dc-content-rank-name.ant-btn {
+  height: auto !important;
+  padding: 0 !important;
+}
+.dc-performance-page .ant-table-thead > tr > th {
+  background: #faf8f5 !important;
+  border-bottom: 0 !important;
+  color: #969088 !important;
+}
+.dc-performance-page .ant-table-tbody > tr > td {
+  border-bottom-color: #f1eeea !important;
+}
+.dc-performance-page .dc-text-button.ant-btn {
+  color: #c87840 !important;
+}
+@media (max-width: 767px) {
+  .dc-performance-page .dc-panel .ant-card-head {
+    padding: 0 16px !important;
+  }
+  .dc-performance-page .dc-panel .ant-card-body {
+    padding: 0 16px 16px !important;
+  }
+}

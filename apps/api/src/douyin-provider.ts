@@ -9,6 +9,8 @@ export interface DouyinToken {
   refreshExpiresIn: number;
 }
 export interface DouyinProfile {
+  secUid?: string;
+  uid?: string;
   openId: string;
   nickname: string;
   avatar?: string;
@@ -231,6 +233,22 @@ export class DouyinProvider {
           avatar = uri.toString();
       } catch {}
     }
-    return { openId, nickname: data.nickname, avatar };
+    // 某些能力可能附带公开身份；仅接受明确字段，绝不把 open_id 当作 sec_uid。
+    const secUid =
+      typeof data.sec_uid === "string" &&
+      /^MS4wLj[A-Za-z0-9_-]{10,300}$/.test(data.sec_uid)
+        ? data.sec_uid
+        : undefined;
+    const uid =
+      typeof data.uid === "string" && /^\d{1,30}$/.test(data.uid)
+        ? data.uid
+        : undefined;
+    return {
+      openId,
+      nickname: data.nickname,
+      avatar,
+      ...(secUid ? { secUid } : {}),
+      ...(uid ? { uid } : {}),
+    };
   }
 }

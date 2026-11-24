@@ -345,6 +345,26 @@ test("template creations: managed multiple tags without automatic tags, snapshot
     assert.ok(matched.templateTagBindingId);
     assert.equal(matched.bindingId, null);
     const date = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const generatedVideo = await db.asset.create({
+      data: {
+        organizationId: org.id,
+        type: "video",
+        name: "统计测试视频",
+        objectKey: `test/${randomUUID()}.mp4`,
+        mimeType: "video/mp4",
+        size: 1,
+      },
+    });
+    await db.work.create({
+      data: {
+        organizationId: org.id,
+        title: "旧版本生成作品",
+        assetId: generatedVideo.id,
+        creationId: draft.id,
+        templateId: template.id,
+        templateSnapshot: draft.templateSnapshot,
+      },
+    });
     const overview = await analytics.overview(org.id, {
       start: date,
       end: date,
@@ -352,6 +372,23 @@ test("template creations: managed multiple tags without automatic tags, snapshot
     assert.equal(
       overview.templates.find((t) => t.templateId === template.id)?.videoCount,
       1,
+    );
+    assert.equal(
+      overview.templates.find(
+        (t) =>
+          t.templateId === template.id && t.version === `v${draft.revision}`,
+      )?.works,
+      1,
+    );
+    assert.equal(overview.content.generated, 1);
+    const filtered = await analytics.overview(org.id, {
+      start: date,
+      end: date,
+      accountId: account.id,
+    });
+    assert.equal(
+      filtered.templates.find((t) => t.templateId === template.id)?.works,
+      null,
     );
     const second = await db.template.create({
       data: {
@@ -433,6 +470,7 @@ test("template creations: managed multiple tags without automatic tags, snapshot
     assert.equal(rename.status, 409);
   } finally {
     for (const organizationId of [org.id, other.id]) {
+      await db.work.deleteMany({ where: { organizationId } });
       await db.account.deleteMany({ where: { organizationId } });
       await db.videoCreationDraft.deleteMany({ where: { organizationId } });
       await db.templateTrackingTag.deleteMany({ where: { organizationId } });

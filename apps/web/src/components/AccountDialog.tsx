@@ -1,36 +1,99 @@
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useRef, useState } from "react";
 import {
-  Alert,
   App,
+  Avatar,
   Button,
+  Card,
+  Col,
   Form,
   Input,
   Modal,
+  Row,
   Select,
   Space,
-  Tag,
+  Typography,
+  Tooltip,
 } from "antd";
-import {
-  fetchStores,
-  formatDate,
-  platformMap,
-  request,
-  save,
-  tierMap,
-} from "@/services/api";
-import type { Account, Store } from "@/types";
-import {
-  douyinAuthorizationMessages,
-  openDouyinAuthorization,
-} from "@/services/douyin-authorization";
+import { fetchStores, platformMap, save, tierMap } from "@/services/api";
+import type { Account, Platform, Store } from "@/types";
+import douyinIcon from "@/assets/social/douyin.svg";
+import kuaishouIcon from "@/assets/social/kuaishou.svg";
+import xiaohongshuIcon from "@/assets/social/xiaohongshu.svg";
+import shipinhaoIcon from "@/assets/social/shipinghao.svg";
+const platformIcons: Record<Platform, string> = {
+  douyin: douyinIcon,
+  kuaishou: kuaishouIcon,
+  xiaohongshu: xiaohongshuIcon,
+  shipinhao: shipinhaoIcon,
+};
+function PlatformPicker({ value, onChange, disabled }: {
+  value?: Platform;
+  onChange?: (value: Platform) => void;
+  disabled: boolean;
+}) {
+  return (
+    <Space size={16} role="radiogroup" aria-label="账号平台">
+      {Object.entries(platformMap).map(([key, label]) => (
+        <Tooltip key={key} title={label}>
+          <Button
+            type="default"
+            className={`yp-platform-choice${value === key ? " is-selected" : ""}`}
+            role="radio"
+            aria-checked={value === key}
+            aria-label={label}
+            disabled={disabled}
+            onClick={() => onChange?.(key as Platform)}
+
+          >
+            <img src={platformIcons[key as Platform]} alt="" style={{ width: 52, height: 52, flexShrink: 0 }} />
+          </Button>
+        </Tooltip>
+      ))}
+    </Space>
+  );
+}
 const options = (map: Record<string, string>) =>
   Object.entries(map).map(([value, label]) => ({ value, label }));
-interface AuthorizationConfig {
-  ready: boolean;
-  reason: string;
-  demoAvailable: boolean;
-  scopes: string[];
-}
+type Preview = {
+  uid: string;
+  secUid: string;
+  nickname: string;
+  avatar: string | null;
+  fans: string | null;
+  confirmationToken: string;
+};
+const guides: Record<
+  Platform,
+  { label: string; example: string; method: string; share: string }
+> = {
+  douyin: {
+    label: "sec_uid",
+    example: "MS4wLjABAAAAhYCwfJpCgIy9aao47My7ZwQT_pP_LzJlnb-800tywOg",
+    method: "电脑打开抖音主页，复制 /user/ 后以 MS4wLj 开头的 ID。",
+    share: "https://v.douyin.com/lSGLaXP-090/",
+  },
+  xiaohongshu: {
+    label: "用户 ID",
+    example: "67767bba000000001801cd2d",
+    method:
+      "打开小红书主页，复制 /user/profile/ 后的 24 位 ID，或在个人主页分享并复制链接。",
+    share: "https://www.xiaohongshu.com/user/profile/67767bba000000001801cd2d",
+  },
+  kuaishou: {
+    label: "用户 ID",
+    example: "1589037969 或 3x27bmjkcvidfne",
+    method: "打开快手个人主页，复制主页 ID，或点击分享主页并复制链接。",
+    share: "https://v.kuaishou.com/JzvAv2ML",
+  },
+  shipinhao: {
+    label: "视频号 ID",
+    example: "sphilT1fCLWHKd7 或 v2_…@finder",
+    method:
+      "打开视频号主页，进入账号资料，复制 sph 开头的视频号 ID；已有 finder username 也可直接填写。",
+    share: "仅支持 https://weixin.qq.com/sph/… 格式的视频短链，不支持微信分享卡片。",
+  },
+};
 export default function AccountDialog({
   target,
   onClose,
@@ -40,240 +103,243 @@ export default function AccountDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { canWrite } = useAuth();
   const [form] = Form.useForm();
   const { message } = App.useApp();
   const [stores, setStores] = useState<Store[]>([]);
+  const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
-  const authorizationWindow = useRef<ReturnType<
-    typeof openDouyinAuthorization
-  > | null>(null);
-  useEffect(() => () => authorizationWindow.current?.dispose(), []);
-  const [config, setConfig] = useState<AuthorizationConfig | null>(null);
-  const platform = Form.useWatch("platform", form);
-  const isNewDouyin = target === "new" && platform === "douyin";
+  const [querying, setQuerying] = useState(false);
+  const sequence = useRef(0);
   const existing = target && target !== "new" ? target : null;
+  const platform = (Form.useWatch("platform", form) || "douyin") as Platform;
+  const guide = guides[platform];
   useEffect(() => {
-    if (!target) return;
+    sequence.current++;
+    setPreview(null);
+    setBusy(false);
+    setQuerying(false);
     form.resetFields();
+    if (!target) return;
     form.setFieldsValue(
-      target === "new" ? { platform: "douyin", tier: "brand" } : target,
+      target === "new"
+        ? { platform: "douyin", tier: "brand" }
+        : {
+            ...target,
+            user_id:
+              target.dataSecUid ||
+              target.dataUid ||
+              (target.platform !== "douyin" ? target.accountId : ""),
+          },
     );
-    setConfig(null);
     fetchStores()
       .then(setStores)
       .catch((e) => message.error(e.message));
-    request<AuthorizationConfig>("/oauth/douyin/config")
-      .then(setConfig)
-      .catch((e) => message.error(e.message));
+    return () => {
+      sequence.current++;
+    };
   }, [target, form, message]);
-  const authorize = async (mode: "live" | "demo" | "trial") => {
-    let popup: ReturnType<typeof openDouyinAuthorization> | undefined;
+  const query = async () => {
+    const values = form.getFieldsValue();
+    if (!values.user_id?.trim() && !values.share_text?.trim()) {
+      message.warning("用户 ID 和分享链接至少填写一项");
+      return;
+    }
+    const current = ++sequence.current;
+    setPreview(null);
+    setQuerying(true);
     try {
-      setBusy(true);
-      authorizationWindow.current?.dispose();
-      popup = openDouyinAuthorization((result) => {
-        const text = douyinAuthorizationMessages[result];
-        if (result === "connected") message.success(text);
-        else if (["demo", "cancelled", "trial_authorized"].includes(result))
-          message.info(text, result === "trial_authorized" ? 8 : 3);
-        else message.error(text);
-        if (["connected", "demo"].includes(result)) {
-          onSaved();
-          onClose();
-        }
+      const data = await save<Preview>("/accounts/profile/preview", {
+        platform: values.platform,
+        user_id: values.user_id?.trim() || "",
+        share_text: values.share_text?.trim() || "",
+        ...(existing ? { accountId: existing.id } : {}),
       });
-      authorizationWindow.current = popup;
-      const values = await form.validateFields(["platform", "tier", "storeId"]);
-      const result = await save<{ authorizationUrl: string }>(
-        "/oauth/douyin/start",
-        {
-          tier: values.tier,
-          storeId: values.storeId || undefined,
-          targetAccountId: existing?.id,
-          mode,
-        },
-      );
-      popup.navigate(result.authorizationUrl);
+      if (sequence.current === current) setPreview(data);
     } catch (e) {
-      popup?.close();
+      if (sequence.current === current)
+        message.error(e instanceof Error ? e.message : "查询失败");
+    } finally {
+      if (sequence.current === current) setQuerying(false);
+    }
+  };
+  const submit = async () => {
+    if (!target) return;
+    if (!existing && !preview) return;
+    try {
+      const values = await form.validateFields([
+        "platform",
+        "tier",
+        "storeId",
+        ...(existing && !preview ? ["nickname"] : []),
+      ]);
+      setBusy(true);
+      if (preview)
+        await save("/accounts/profile/bind", {
+          confirmationToken: preview.confirmationToken,
+          tier: values.tier,
+          ...(values.storeId ? { storeId: values.storeId } : {}),
+        });
+      else if (existing)
+        await save(
+          `/accounts/${existing.id}`,
+          {
+            nickname: values.nickname,
+            accountId: existing.accountId,
+            platform: existing.platform,
+            tier: values.tier,
+            storeId: values.storeId || null,
+          },
+          "PUT",
+        );
+      message.success(preview ? "账号已绑定" : "账号信息已保存");
+      onSaved();
+      onClose();
+    } catch (e) {
       if (e instanceof Error) message.error(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const submit = async (values: Record<string, unknown>) => {
-    setBusy(true);
-    try {
-      await save(
-        target === "new" ? "/accounts" : `/accounts/${target!.id}`,
-        {
-          nickname: values.nickname,
-          accountId: values.accountId,
-          platform: values.platform,
-          tier: values.tier,
-          storeId: values.storeId ?? null,
-        },
-        target === "new" ? "POST" : "PUT",
-      );
-      message.success("账号档案已保存");
-      onSaved();
-      onClose();
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : "保存失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-  const sync = async () => {
-    if (!existing) return;
-    setBusy(true);
-    try {
-      await save(`/oauth/douyin/accounts/${existing.id}/refresh`, {});
-      message.success("授权状态已更新");
-      onSaved();
-      onClose();
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : "状态更新失败");
-      onSaved();
     } finally {
       setBusy(false);
     }
   };
   return (
     <Modal
-      title={target === "new" ? "绑定账号" : "账号信息"}
+      title={existing ? "账号信息" : "绑定账号"}
       open={!!target}
-      onCancel={onClose}
+      style={{ top: 32 }}
+      styles={{ body: { maxHeight: "calc(100dvh - 200px)", overflowY: "auto" } }}
+      onCancel={() => {
+        if (!busy) onClose();
+      }}
+      destroyOnClose
       footer={
-        <Space wrap>
-          <Button onClick={onClose}>取消</Button>
-          {platform === "douyin" && (
-            <>
-              {config?.demoAvailable &&
-                (!existing ||
-                  !existing.authorization ||
-                  existing.authorization.mode === "demo") && (
-                  <Button loading={busy} onClick={() => void authorize("demo")}>
-                    本地演示授权
-                  </Button>
-                )}
-              <Button
-                type="primary"
-                disabled={!config?.ready}
-                loading={busy}
-                onClick={() => void authorize("live")}
-              >
-                {existing?.authorization?.mode === "live"
-                  ? "重新授权"
-                  : "抖音扫码授权"}
-              </Button>
-              <Button
-                disabled={!config?.ready}
-                loading={busy}
-                onClick={() => void authorize("trial")}
-              >
-                加入测试白名单
-              </Button>
-              {existing?.authorization?.mode === "live" && (
-                <Button loading={busy} onClick={() => void sync()}>
-                  更新授权状态
-                </Button>
-              )}
-            </>
-          )}
-          {!isNewDouyin && (
-            <Button type="primary" loading={busy} onClick={() => form.submit()}>
-              保存
-            </Button>
-          )}
+        <Space>
+          <Button disabled={busy} onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            type="primary"
+            disabled={!canWrite || querying || (!existing && !preview)}
+            loading={busy}
+            onClick={() => void submit()}
+          >
+            {existing && !preview ? "保存" : "确认绑定"}
+          </Button>
         </Space>
       }
     >
-      {platform === "douyin" ? (
-        <Alert
-          type={config?.ready ? "info" : "warning"}
-          className="mb-4"
-          message={
-            config?.ready
-              ? "在新窗口打开抖音官方页面扫码授权，成功后自动获取昵称和头像。"
-              : config?.reason || "正在检查抖音授权配置…"
+      <Form
+        form={form}
+        layout="vertical"
+        disabled={busy || !canWrite}
+        onValuesChange={(changed) => {
+          if ("platform" in changed) {
+            form.setFieldsValue({ user_id: "", share_text: "" });
           }
-          description={
-            <Space direction="vertical" size={4}>
-              <span>
-                测试应用请先加入测试白名单，确认入白成功后，再扫码绑定账号。
-              </span>
-              {config?.demoAvailable && (
-                <span>本地演示不会连接抖音，也不会取得真实授权。</span>
-              )}
+          if (
+            "platform" in changed ||
+            "user_id" in changed ||
+            "share_text" in changed
+          ) {
+            sequence.current++;
+            setPreview(null);
+            setQuerying(false);
+          }
+        }}
+      >
+        <Form.Item name="platform" rules={[{ required: true }]}>
+          <PlatformPicker disabled={!!existing || busy || !canWrite} />
+        </Form.Item>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item name="tier" label="归属" rules={[{ required: true }]}>
+              <Select options={options(tierMap)} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="storeId" label="门店">
+              <Select
+                allowClear
+                options={stores.map((s) => ({ value: s.id, label: s.name }))}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item
+          name="user_id"
+          label={guide.label}
+          extra={
+            <div style={{ fontSize: 12, lineHeight: "18px" }}>
+              <div style={{ overflowWrap: "anywhere" }}>
+                {guide.example}
+              </div>
+              <div>{guide.method}</div>
+            </div>
+          }
+        >
+          <Input
+            maxLength={512}
+            placeholder={`填写${guide.label}`}
+            onPressEnter={() => void query()}
+          />
+        </Form.Item>
+        <Form.Item
+          name="share_text"
+          label={platform === "shipinhao" ? "视频分享短链" : "主页分享链接 / share_text"}
+          extra={<span style={{ fontSize: 12, lineHeight: "18px" }}>{guide.share}</span>}
+        >
+          <Input.TextArea
+            rows={2}
+            maxLength={2048}
+            placeholder={platform === "shipinhao"
+              ? "粘贴 https://weixin.qq.com/sph/… 视频短链，与视频号 ID 至少填一项"
+              : "粘贴主页链接或完整分享文案，与用户 ID 至少填一项"}
+          />
+        </Form.Item>
+        <Button
+          loading={querying}
+          disabled={busy || !canWrite}
+          onClick={() => void query()}
+        >
+          查询用户信息
+        </Button>
+        {preview && (
+          <Card size="small" style={{ marginTop: 16, marginBottom: 16 }}>
+            <Space>
+              <Avatar src={preview.avatar} size={48}>
+                {[...preview.nickname][0]}
+              </Avatar>
+              <div>
+                <Typography.Text strong>{preview.nickname}</Typography.Text>
+                <div
+                  style={{
+                    overflowWrap: "anywhere",
+                    fontSize: 12,
+                    color: "var(--yp-neutral-500)",
+                  }}
+                >
+                  ID：{preview.secUid}
+                </div>
+                <div>
+                  粉丝：
+                  {preview.fans == null
+                    ? "—"
+                    : Number(preview.fans).toLocaleString("zh-CN")}
+                </div>
+              </div>
             </Space>
-          }
-        />
-      ) : (
-        <Alert
-          type="info"
-          className="mb-4"
-          message="此平台暂时只保存账号档案，授权后续接入。"
-        />
-      )}
-      {existing?.authorization && (
-        <div className="mb-4">
-          <Tag
-            color={
-              existing.authorization.mode === "demo"
-                ? "orange"
-                : existing.status === "active"
-                  ? "green"
-                  : "red"
-            }
-          >
-            {existing.authorization.mode === "demo"
-              ? "本地演示授权 · 非真实抖音账号"
-              : existing.status === "active"
-                ? "抖音已授权"
-                : "授权已失效"}
-          </Tag>
-          {existing.authorization.mode === "live" && (
-            <p className="mt-2 text-sm">
-              凭证有效期至 {formatDate(existing.authorization.expiresAt)}
-            </p>
-          )}
-        </div>
-      )}
-      <Form form={form} layout="vertical" onFinish={submit}>
-        {!isNewDouyin && (
-          <>
-            <Form.Item
-              name="nickname"
-              label="账号名称"
-              rules={[{ required: true }]}
-            >
-              <Input maxLength={100} />
-            </Form.Item>
-            <Form.Item
-              name="accountId"
-              label="平台账号 ID"
-              rules={[{ required: true }]}
-            >
-              <Input readOnly={!!existing?.authorization} maxLength={100} />
-            </Form.Item>
-          </>
+          </Card>
         )}
-        <Form.Item name="platform" label="平台" rules={[{ required: true }]}>
-          <Select
-            disabled={!!existing?.authorization}
-            options={options(platformMap)}
-          />
-        </Form.Item>
-        <Form.Item name="tier" label="归属" rules={[{ required: true }]}>
-          <Select options={options(tierMap)} />
-        </Form.Item>
-        <Form.Item name="storeId" label="门店">
-          <Select
-            allowClear
-            options={stores.map((s) => ({ value: s.id, label: s.name }))}
-          />
-        </Form.Item>
+        {existing && !preview && (
+          <Form.Item
+            style={{ marginTop: 16 }}
+            name="nickname"
+            label="账号名称"
+            rules={[{ required: true, whitespace: true }]}
+          >
+            <Input maxLength={100} />
+          </Form.Item>
+        )}
+
       </Form>
     </Modal>
   );

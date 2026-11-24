@@ -1,3 +1,4 @@
+import { OneApiDataProvider, oneapiEnabled } from "./oneapi.js";
 import { Injectable } from "@nestjs/common";
 
 export class DataProviderError extends Error {
@@ -109,15 +110,17 @@ export const sampleDelta = <T extends { capturedAt: Date }>(
   return Number(read(after) - read(before));
 };
 export type VideoData = {
+  coverUrl?: string | null;
   remoteId: string;
   title: string;
   publishedAt: Date;
   tags: string[];
   metrics: {
-    views: bigint;
-    likes: bigint;
-    comments: bigint;
-    shares: bigint;
+    views: bigint | null;
+    likes: bigint | null;
+    comments: bigint | null;
+    shares: bigint | null;
+    collects?: bigint | null;
   } | null;
 };
 export function parseVideo(row: Record<string, any>): VideoData {
@@ -152,7 +155,9 @@ export function parseVideo(row: Record<string, any>): VideoData {
 
 @Injectable()
 export class DouyinDataProvider {
+  readonly oneapi = new OneApiDataProvider();
   availability(kind: string, scopes: string[]) {
+    if (oneapiEnabled()) return this.oneapi.availability();
     if (kind === "videos") {
       // This is an explicitly opted-in compatibility adapter, not a claim of current application eligibility.
       if (process.env.DOUYIN_VIDEO_API_PROFILE !== "website_v1")

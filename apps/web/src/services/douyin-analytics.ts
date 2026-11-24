@@ -1,5 +1,6 @@
-import { request, save } from "./api";
+import { request } from "./api";
 export type LiveMetrics = {
+  collects?: number | null;
   views: number | null;
   likes: number | null;
   comments: number | null;
@@ -8,6 +9,7 @@ export type LiveMetrics = {
 export type SyncAccount = {
   id: string;
   name: string;
+  platform: string;
   type: string;
   mode: string;
   scopes: string[];
@@ -22,14 +24,8 @@ export type SyncAccount = {
     nextAttemptAt: string | null;
   }[];
 };
-export type TrackingTag = {
-  id: string;
-  templateId: string | null;
-  tag: string;
-  version: string;
-  titleSnapshot: string;
-};
 export type LiveVideo = {
+  coverUrl?: string | null;
   id: string;
   remoteId: string;
   title: string;
@@ -50,6 +46,20 @@ export type LiveVideo = {
 };
 export type LiveOverview = {
   source: "live";
+  content: {
+    generated: number | null;
+    pending: number | null;
+    failed: number | null;
+    publishedWorks: number | null;
+    playedWorks: number | null;
+    pendingPublish: number | null;
+    trend: { date: string; views: number | null }[];
+    previous: {
+      published: number;
+      views: number | null;
+      netFans: number | null;
+    };
+  };
   start: string;
   end: string;
   basis: string;
@@ -67,6 +77,7 @@ export type LiveOverview = {
   accounts: {
     id: string;
     name: string;
+    platform: string;
     type: string;
     store: string | null;
     published: number;
@@ -84,6 +95,7 @@ export type LiveOverview = {
     tag: string;
     published: number;
     videoCount: number;
+    works: number | null;
     accounts: number;
     metrics: LiveMetrics;
     average: number | null;
@@ -91,27 +103,14 @@ export type LiveOverview = {
   trading: { status: string; message: string };
 };
 export const fetchSyncStatus = () =>
-  request<SyncAccount[]>("/analytics/douyin/status");
+  request<SyncAccount[]>("/analytics/social/status");
 export const fetchLiveOverview = (params: {
   start: string;
   end: string;
   accountId: string;
   type: string;
+  platform?: string;
 }) =>
   request<LiveOverview>(
-    `/analytics/douyin/overview?${new URLSearchParams(params)}`,
+    `/analytics/social/overview?${new URLSearchParams({ ...params })}`,
   );
-export const enqueueSync = (id: string) =>
-  save<SyncAccount[]>(
-    `/analytics/douyin/accounts/${encodeURIComponent(id)}/sync`,
-    {},
-  );
-export const fetchTrackingTags = () =>
-  request<TrackingTag[]>("/analytics/douyin/tags");
-export const addTrackingTag = (data: {
-  templateId: string;
-  tag: string;
-  version: string;
-}) => save<TrackingTag>("/analytics/douyin/tags", data);
-export const rematchTags = () =>
-  save<{ processed: number }>("/analytics/douyin/tags/rematch", {});

@@ -1,3 +1,4 @@
+import { oneapiEnabled } from "./oneapi.js";
 import {
   BadRequestException,
   Body,
@@ -70,6 +71,7 @@ export const authorizationSelect = {
 export function accountView<
   T extends {
     status: string;
+    dataProvider?: string | null;
     authorization?: {
       mode: string;
       scopes: string[];
@@ -84,11 +86,13 @@ export function accountView<
   return {
     ...rest,
     status:
-      authorization?.mode === "demo"
-        ? "warning"
-        : account.status === "active" && expired
-          ? "inactive"
-          : account.status,
+      account.dataProvider === "oneapi"
+        ? account.status
+        : authorization?.mode === "demo"
+          ? "warning"
+          : account.status === "active" && expired
+            ? "inactive"
+            : account.status,
     authorization: authorization
       ? {
           mode: authorization.mode,
@@ -148,6 +152,10 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
   }
   async start(req: AuthRequest, dto: DouyinStartDto) {
     requireRole(req);
+    if (oneapiEnabled())
+      throw new BadRequestException(
+        "当前使用 OneAPI 绑定账号，抖音官方授权暂未启用",
+      );
     await this.validateTarget(req, dto);
     const config = douyinConfig();
     if (dto.mode === "demo" && !config.demoAvailable)
@@ -324,7 +332,24 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
       });
       if (existing && target && existing.id !== target.id)
         throw new ConflictException("该抖音账号已登记，请在原记录中授权");
+      const currentAccount = target || owner?.account || existing;
+      if (
+        token &&
+        profile.secUid &&
+        currentAccount?.dataSecUid &&
+        profile.secUid !== currentAccount.dataSecUid
+      )
+        throw new ConflictException(
+          "公开身份与已有采集账号不一致，请核对授权账号",
+        );
       const data = {
+        ...(token && profile.secUid
+          ? {
+              dataProfile: profile.secUid,
+              dataSecUid: profile.secUid,
+              ...(profile.uid ? { dataUid: profile.uid } : {}),
+            }
+          : {}),
         nickname: profile.nickname,
         avatar: profile.avatar || null,
         accountId: profile.openId,
@@ -402,6 +427,10 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
     });
   }
   async refreshAccount(accountId: string, force = false) {
+    if (oneapiEnabled())
+      throw new BadRequestException(
+        "当前使用 OneAPI，暂不调用抖音官方授权接口",
+      );
     const config = this.provider.ensureConfigured();
     const credential = await this.db.accountAuthorization.findUnique({
       where: { accountId },
@@ -526,6 +555,7 @@ export class DouyinService implements OnModuleInit, OnModuleDestroy {
     );
   }
   private async refreshDue() {
+    if (oneapiEnabled()) return;
     if (this.workerBusy || !douyinConfig().ready) return;
     this.workerBusy = true;
     try {

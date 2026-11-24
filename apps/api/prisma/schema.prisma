@@ -63,6 +63,11 @@ model Session {
  @@index([expiresAt])
 }
 model Account {
+ dataProvider String?
+ dataRevision Int @default(0)
+ dataProfile String?
+ dataSecUid String?
+ dataUid String?
  id String @id @default(cuid())
  organizationId String
  organization Organization @relation(fields:[organizationId],references:[id])
@@ -81,6 +86,7 @@ model Account {
  metricSamples AccountMetricSample[]
  syncStates DouyinSyncState[]
  @@unique([organizationId,platform,accountId])
+ @@unique([organizationId,platform,dataUid])
  @@index([platform,id])
 }
 model Asset {
@@ -329,6 +335,8 @@ model TemplateTagBinding {
  @@index([organizationId,templateId])
 }
 model PlatformVideo {
+ coverUrl String?
+ source String @default("official")
  templateTagBindingId String?
  templateTagBinding TemplateTagBinding? @relation(fields:[templateTagBindingId],references:[id],onDelete:SetNull)
  id String @id @default(cuid())
@@ -348,25 +356,28 @@ model PlatformVideo {
  @@index([organizationId,publishedAt])
 }
 model VideoMetricSample {
+ source String @default("official")
+ collects BigInt?
  id String @id @default(cuid())
  videoId String
  video PlatformVideo @relation(fields:[videoId],references:[id],onDelete:Cascade)
  bucket DateTime
  capturedAt DateTime
- views BigInt
- likes BigInt
- comments BigInt
- shares BigInt
+ views BigInt?
+ likes BigInt?
+ comments BigInt?
+ shares BigInt?
  @@unique([videoId,bucket])
  @@index([videoId,capturedAt])
 }
 model AccountMetricSample {
+ source String @default("official")
  id String @id @default(cuid())
  accountId String
  account Account @relation(fields:[accountId],references:[id],onDelete:Cascade)
  bucket DateTime
  capturedAt DateTime
- fans BigInt
+ fans BigInt?
  @@unique([accountId,bucket])
  @@index([accountId,capturedAt])
 }

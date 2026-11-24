@@ -1,3 +1,4 @@
+import { metricSource, oneapiEnabled } from "./oneapi.js";
 import { IsBoolean, IsIn, IsOptional } from "class-validator";
 import { validateTemplateConfig } from "./workflow-definition.js";
 import { ApiCookieAuth, ApiConsumes, ApiBody } from "@nestjs/swagger";
@@ -137,7 +138,14 @@ export class AccountsController {
       platform: q.platform,
       tier: q.tier,
       ...(q.q
-        ? { OR: [{ nickname: contains(q.q) }, { accountId: contains(q.q) }] }
+        ? {
+            OR: [
+              { nickname: contains(q.q) },
+              { accountId: contains(q.q) },
+              { dataSecUid: contains(q.q) },
+              { dataProfile: contains(q.q) },
+            ],
+          }
         : {}),
     };
     const [items, total] = await this.db.$transaction([
@@ -147,13 +155,22 @@ export class AccountsController {
         orderBy: { bindTime: "desc" },
         include: {
           store: true,
+          metricSamples: {
+            where: { source: metricSource() },
+            orderBy: { capturedAt: "desc" },
+            take: 1,
+          },
           authorization: { select: authorizationSelect },
         },
       }),
       this.db.account.count({ where }),
     ]);
     return {
-      items: items.map(accountView),
+      items: items.map(({ metricSamples, ...account }) => ({
+        ...accountView(account),
+        fans:
+          metricSamples[0]?.fans == null ? null : Number(metricSamples[0].fans),
+      })),
       total,
       page: q.page,
       pageSize: q.pageSize,
@@ -161,6 +178,8 @@ export class AccountsController {
   }
   @Post() async create(@Body() dto: AccountDto, @Req() req: AuthRequest) {
     requireRole(req);
+    if (oneapiEnabled())
+      throw new BadRequestException("请先查询用户信息并确认绑定账号");
     await this.ops.store(dto.storeId, req);
     return this.ops.change(
       req,
@@ -188,7 +207,7 @@ export class AccountsController {
     });
     if (!original) throw new NotFoundException("账号不存在");
     if (
-      original.authorization &&
+      (original.authorization || original.dataProvider === "oneapi") &&
       (dto.platform !== original.platform ||
         dto.accountId !== original.accountId)
     )

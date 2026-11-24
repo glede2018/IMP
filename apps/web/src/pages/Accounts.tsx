@@ -33,11 +33,6 @@ import douyinIcon from "@/assets/social/douyin.svg";
 import kuaishouIcon from "@/assets/social/kuaishou.svg";
 import xiaohongshuIcon from "@/assets/social/xiaohongshu.svg";
 import shipinhaoIcon from "@/assets/social/shipinghao.svg";
-import {
-  completeDouyinAuthorization,
-  douyinAuthorizationMessages,
-} from "@/services/douyin-authorization";
-
 const platformIcons: Record<Platform, string> = {
   douyin: douyinIcon,
   kuaishou: kuaishouIcon,
@@ -63,8 +58,8 @@ const PlatformIcon = ({
 );
 
 /** 粉丝数格式化：超过 1 万显示 X.Xw */
-function formatFans(fans?: number): string {
-  if (fans === undefined) return "—";
+function formatFans(fans?: number | null): string {
+  if (fans == null) return "—";
   if (fans >= 10000) {
     return (fans / 10000).toFixed(1) + "w";
   }
@@ -77,7 +72,7 @@ function formatFans(fans?: number): string {
  */
 export default function Accounts() {
   const { canWrite } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [dialogTarget, setDialogTarget] = useState<Account | "new" | null>(
     null,
   );
@@ -109,26 +104,18 @@ export default function Accounts() {
     loadData();
   }, []);
 
-  useEffect(() => {
-    const result = searchParams.get("douyin");
-    if (!result) return;
-    const completedInPopup = completeDouyinAuthorization(result);
-    const text = douyinAuthorizationMessages[result];
-    if (text && !completedInPopup) {
-      if (result === "connected") message.success(text);
-      else if (["demo", "cancelled", "trial_authorized"].includes(result))
-        message.info(text, result === "trial_authorized" ? 8 : 3);
-      else message.error(text);
-    }
-    const next = new URLSearchParams(searchParams);
-    next.delete("douyin");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
-
   // 过滤
   const filtered = accounts.filter((a) => {
     const matchKeyword =
-      !keyword || a.nickname.includes(keyword) || a.accountId.includes(keyword);
+      !keyword ||
+      a.nickname.includes(keyword) ||
+      (
+        a.dataSecUid ||
+        a.dataUid ||
+        a.dataProfile ||
+        a.accountId ||
+        ""
+      ).includes(keyword);
     const matchPlatform = !platformFilter || a.platform === platformFilter;
     const matchTier = !tierFilter || a.tier === tierFilter;
     return matchKeyword && matchPlatform && matchTier;
@@ -199,7 +186,33 @@ export default function Accounts() {
               className="yp-text-xs"
               style={{ color: "var(--yp-neutral-500)" }}
             >
-              ID: {record.accountId}
+              {record.dataSecUid || record.dataUid ? (
+                <span
+                  title={record.dataSecUid || record.dataUid || ""}
+                  style={{
+                    display: "block",
+                    maxWidth: 280,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ID: {record.dataSecUid || record.dataUid}
+                </span>
+              ) : (
+                <Space size={8}>
+                  <span>ID: 待添加</span>
+                  {canWrite && (
+                    <Button
+                      type="link"
+                      size="small"
+                      onClick={() => setDialogTarget(record)}
+                    >
+                      添加 ID
+                    </Button>
+                  )}
+                </Space>
+              )}
             </div>
           </div>
         </div>
@@ -261,6 +274,7 @@ export default function Accounts() {
       key: "status",
       render: (status: Account["status"], record: Account) => {
         const s =
+          record.dataProvider !== "oneapi" &&
           record.authorization?.mode === "demo"
             ? { ...accountStatusMap.warning, label: "演示授权" }
             : accountStatusMap[status];
@@ -288,6 +302,7 @@ export default function Accounts() {
             type="link"
             size="small"
             danger
+            disabled={!canWrite}
             onClick={() => setUnbindTarget(record)}
           >
             解绑

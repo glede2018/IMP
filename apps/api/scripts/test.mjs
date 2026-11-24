@@ -18,7 +18,8 @@ const files = readdirSync(new URL("../test/", import.meta.url))
 if (!files.length) throw new Error("未发现对应测试文件");
 const child = spawn(process.execPath, ["--import", "tsx", "--test", ...files], {
   cwd: root,
-  env: process.env,
+  // 测试默认隔离真实采集配置，专用用例自行注入模拟密钥。
+  env: { ...process.env, DOUYIN_DATA_PROVIDER: "official", ONEAPI_API_KEY: "" },
   stdio: "inherit",
 });
 for (const signal of ["SIGINT", "SIGTERM"])

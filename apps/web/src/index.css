@@ -929,3 +929,30 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .yp-sidebar, .yp-main-area, .yp-sidebar-label, .yp-sidebar-collapse.ant-btn, .yp-sidebar-submenu, .yp-template-preview-video { transition: none; }
 }
+
+/* 平台选择按钮单独设置尺寸，避免全局按钮内边距挤压平台图标。 */
+.ant-btn.yp-platform-choice {
+  width: 56px !important;
+  height: 56px !important;
+  padding: 1px !important;
+  flex-shrink: 0;
+  background: #fff !important;
+  border: 1px solid var(--yp-border) !important;
+}
+.ant-btn.yp-platform-choice:hover,
+.ant-btn.yp-platform-choice:focus-visible {
+  background: #fff !important;
+  border-color: var(--yp-neutral-300) !important;
+}
+.ant-btn.yp-platform-choice.is-selected,
+.ant-btn.yp-platform-choice.is-selected:hover,
+.ant-btn.yp-platform-choice.is-selected:focus-visible {
+  background: #fff !important;
+  border-color: #ff4d4f !important;
+}
+.ant-btn.yp-platform-choice img {
+  width: 52px;
+  height: 52px;
+  max-width: none;
+  object-fit: contain;
+}

@@ -31,6 +31,11 @@ export interface Store {
   name: string;
 }
 export interface Account {
+  dataProfile?: string | null;
+  dataSecUid?: string | null;
+  dataUid?: string | null;
+  dataProvider?: string | null;
+  fans?: number | null;
   id: string;
   nickname: string;
   accountId: string;
