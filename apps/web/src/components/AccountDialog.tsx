@@ -68,7 +68,7 @@ const guides: Record<
   { label: string; example: string; method: string; share: string }
 > = {
   douyin: {
-    label: "sec_uid",
+    label: "用户 ID",
     example: "MS4wLjABAAAAhYCwfJpCgIy9aao47My7ZwQT_pP_LzJlnb-800tywOg",
     method: "电脑打开抖音主页，复制 /user/ 后以 MS4wLj 开头的 ID。",
     share: "https://v.douyin.com/lSGLaXP-090/",

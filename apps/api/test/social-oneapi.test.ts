@@ -1,4 +1,4 @@
-import { videoCoverUrl } from "../src/video-cover.js";
+import { videoCoverUrl, wechatVideoCoverUrl } from "../src/video-cover.js";
 import { parseOneApiVideo } from "../src/oneapi.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -244,4 +244,20 @@ test("四个平台封面解析及不安全地址过滤，快手 CDN 自动升级
   assert.equal(videoCoverUrl("https://img.example/a.heic", "https://img.example/a.jpeg"), "https://img.example/a.jpeg");
   assert.equal(videoCoverUrl("javascript:alert(1)", "http://untrusted.test/a"), null);
   assert.equal(videoCoverUrl("https://user:secret@img.example/a"), null);
+});
+
+test("视频号封面携带独立令牌，优先使用签名后的媒体封面", () => {
+  const base = "https://wxapp.tc.qq.com/251/20304/stodownload?encfilekey=abc&idx=1";
+  const signed = wechatVideoCoverUrl(base, "&token=test%2Bvalue%3D");
+  assert.equal(new URL(signed!).searchParams.get("token"), "test+value=");
+  assert.equal(new URL(signed!).searchParams.get("encfilekey"), "abc");
+  const video = new SocialOneApiProvider().parseVideo("shipinhao", {
+    id: "123", title: "视频", create_time: 1765876097,
+    cover_img_url: "https://img.example/unsigned.jpg",
+    media: { cover_url: base, cover_url_token: "&token=test%2Bvalue%3D" },
+  }, "1");
+  assert.equal(video.coverUrl, signed);
+  assert.equal(wechatVideoCoverUrl(base, undefined), base);
+  assert.equal(wechatVideoCoverUrl(base, "&token=abc&other=1"), base);
+  assert.equal(wechatVideoCoverUrl("javascript:alert(1)", "&token=abc"), null);
 });

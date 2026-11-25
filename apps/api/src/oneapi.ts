@@ -213,7 +213,7 @@ export class OneApiDataProvider {
     if (!validDataProfile(profile))
       throw new DataProviderError(
         "blocked",
-        "请填写有效的抖音主页链接或 sec_uid。",
+        "请填写有效的抖音主页链接或用户ID",
       );
     const data = await this.request(
       "fetch_user_data",

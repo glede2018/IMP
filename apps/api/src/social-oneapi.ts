@@ -1,4 +1,4 @@
-import { videoCoverUrl } from "./video-cover.js";
+import { videoCoverUrl, wechatVideoCoverUrl } from "./video-cover.js";
 import {
   countValue,
   DataProviderError,
@@ -428,7 +428,10 @@ export class SocialOneApiProvider {
         ? videoCoverUrl(row.video_info_v2?.image?.thumbnail, row.video_info_v2?.image?.first_frame, row.images_list?.[0]?.url)
         : platform === "kuaishou"
           ? videoCoverUrl(...(row.cover_thumbnail_urls || []).map((image: any) => image.url), ...(row.ff_cover_thumbnail_urls || []).map((image: any) => image.url))
-          : videoCoverUrl(row.cover_img_url, row.media?.cover_url),
+          : videoCoverUrl(
+              wechatVideoCoverUrl(row.media?.cover_url, row.media?.cover_url_token),
+              row.cover_img_url,
+            ),
       publishedAt: timestamp(time),
       tags: extractTags({
         title,

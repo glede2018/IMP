@@ -161,7 +161,7 @@ test("OneAPI 额外置顶作品去重后按20条拆批，不丢失尾部作品",
   assert.ok(result.videos.every((v) => v.metrics?.views === 142165407n));
 });
 
-test("查询用户支持 sec_uid 或 share_text，拒绝空值和非抖音链接", () => {
+test("查询用户支持用户ID 或 share_text，拒绝空值和非抖音链接", () => {
   assert.equal(profileInput({}), null);
   assert.equal(
     profileInput({

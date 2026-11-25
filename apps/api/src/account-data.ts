@@ -115,7 +115,7 @@ export class AccountDataController {
     const input = profileInput(dto);
     if (!input)
       throw new BadRequestException(
-        "请填写有效的 sec_uid 或抖音主页分享链接，两项至少填写一项",
+        "请填写有效的用户ID或抖音主页分享链接，两项至少填写一项",
       );
     const fetched = await new OneApiDataProvider()
       .profile(input)

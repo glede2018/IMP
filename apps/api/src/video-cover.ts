@@ -16,3 +16,16 @@ export function videoCoverUrl(...candidates: unknown[]): string | null {
   }
   return null;
 }
+
+// 视频号 CDN 将访问令牌单独返回，缺少令牌时封面会返回 HTTP 400。
+export function wechatVideoCoverUrl(value: unknown, token: unknown): string | null {
+  const base = videoCoverUrl(value);
+  if (!base || typeof token !== "string" || !token) return base;
+  const params = new URLSearchParams(token.replace(/^[?&]/, ""));
+  const entries = [...params];
+  if (entries.length !== 1 || entries[0][0] !== "token" || !entries[0][1])
+    return base;
+  const url = new URL(base);
+  url.searchParams.set("token", entries[0][1]);
+  return url.href;
+}

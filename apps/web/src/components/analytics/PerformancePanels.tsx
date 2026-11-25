@@ -28,8 +28,6 @@ const compact = (v: number | null | undefined) =>
       : text(v);
 const signed = (v: number | null | undefined) =>
   v == null ? "—" : `${v > 0 ? "+" : ""}${text(v)}`;
-const rate = (a: number | null, b: number | null) =>
-  a == null || b == null || b <= 0 ? "—" : `${((a / b) * 100).toFixed(2)}%`;
 const empty = (
   <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
 );
@@ -116,11 +114,11 @@ function VideoTable({
           render: (_, v) => text(v.latest?.collects),
         },
         ...(["likes", "comments", "shares"] as const).map((key, i) => ({
-          title: ["点赞率", "评论率", "分享率"][i],
+          title: ["点赞数", "评论数", "分享数"][i],
           key,
           align: "right" as const,
           render: (_: unknown, v: LiveVideo) =>
-            rate(v.latest?.[key] ?? null, v.latest?.views ?? null),
+            text(v.latest?.[key]),
         })),
       ]}
     />
@@ -361,16 +359,22 @@ export function TemplatePerformance({
               render: text,
             },
             {
-              title: "点赞率",
+              title: "点赞数",
               key: "likes",
               align: "right",
-              render: (_, t) => rate(t.metrics.likes, t.metrics.views),
+              render: (_, t) => text(t.metrics.likes),
             },
             {
-              title: "评论率",
+              title: "评论数",
               key: "comments",
               align: "right",
-              render: (_, t) => rate(t.metrics.comments, t.metrics.views),
+              render: (_, t) => text(t.metrics.comments),
+            },
+            {
+              title: "分享数",
+              key: "shares",
+              align: "right",
+              render: (_, t) => text(t.metrics.shares),
             },
           ]}
         />
