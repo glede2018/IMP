@@ -95,6 +95,43 @@ test("OneAPI 缺失统计不写零、重复游标和其他账号视频拒绝采�
   provider.request = async () => ({ aweme_list: [video(0)], has_more: 0 });
   await assert.rejects(provider.videos(secUid, "another-user", "0"), /不一致/);
 });
+test("抖音头像跳过 HEIC 并读取其他尺寸的兼容地址", async () => {
+  const provider = new OneApiDataProvider();
+  const user = {
+    sec_uid: secUid, uid: "63700340656", nickname: "测试账号", follower_count: 1,
+    avatar_thumb: { url_list: ["https://p3.douyinpic.com/avatar.heic?from=1", "https://p3.douyinpic.com/avatar.jpeg?from=1"] },
+    avatar_medium: { url_list: ["https://p3.douyinpic.com/medium.jpeg"] },
+  };
+  provider.request = async () => ({ user });
+  assert.equal((await provider.profile(secUid)).avatar, "https://p3.douyinpic.com/avatar.jpeg?from=1");
+  user.avatar_thumb.url_list = ["https://p3.douyinpic.com/avatar.heic"];
+  assert.equal((await provider.profile(secUid)).avatar, "https://p3.douyinpic.com/medium.jpeg");
+  user.avatar_medium.url_list = ["javascript:alert(1)"];
+  assert.equal((await provider.profile(secUid)).avatar, null);
+});
+test("抖音缺失粉丝数或单项视频统计时保留空值，不丢弃其他有效数据", async () => {
+  const p = new OneApiDataProvider();
+  p.request = async () => ({ user: {
+    sec_uid: secUid, uid: "63700340656", nickname: "测试账号",
+    avatar_thumb: { url_list: ["https://img.example/avatar.jpeg"] },
+  } });
+  const profile = await p.profile(secUid);
+  assert.equal(profile.fans, null);
+  assert.equal(profile.avatar, "https://img.example/avatar.jpeg");
+  p.request = async (path) => path === "fetch_user_video_list"
+    ? { aweme_list: [video(0)], has_more: 0 }
+    : { item_id: video(0).aweme_id, stats: {
+      watch_cnt: null, like_cnt: "12", comment_cnt: "0", share_cnt: "invalid", favorite_cnt: "5",
+    } };
+  const page = await p.videos(secUid, "63700340656", "0");
+  assert.deepEqual(page.videos[0].metrics, {
+    views: null, likes: 12n, comments: 0n, shares: null, collects: 5n,
+  });
+  p.request = async (path) => path === "fetch_user_video_list"
+    ? { aweme_list: [video(0)], has_more: 0 }
+    : { item_id: video(0).aweme_id, stats: {} };
+  assert.equal((await p.videos(secUid, "63700340656", "0")).videos[0].metrics, null);
+});
 test("OneAPI 用户粉丝优先抖音总数，网络错误和密钥不进入错误信息", async () => {
   const provider = new OneApiDataProvider();
   provider.request = async () => ({

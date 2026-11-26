@@ -10,6 +10,16 @@ export const oneapiEnabled = () =>
   process.env.DOUYIN_DATA_PROVIDER === "oneapi";
 export const metricSource = () => (oneapiEnabled() ? "oneapi_v2" : "official");
 
+// 平台未提供或返回无效指标时保留为空，不能补零或丢弃其他有效指标。
+export const nullableCount = (value: unknown): bigint | null => {
+  if (value == null || value === "") return null;
+  try {
+    return countValue(value);
+  } catch {
+    return null;
+  }
+};
+
 // 固定北京时间零点开始下一轮，分页续传和失败重试不算新的每日任务。
 export function nextDailySync(now = new Date()) {
   const local = new Date(now.getTime() + 8 * 3600000);
@@ -232,16 +242,20 @@ export class OneApiDataProvider {
       throw invalid();
     if (profile.startsWith("MS4wLj") && user.sec_uid !== profile)
       throw invalid();
-    const avatar = user.avatar_thumb?.url_list?.[0];
+    // 抖音头像首项常为 HEIC，遍历备选地址以选择浏览器兼容的图片。
+    const avatar = videoCoverUrl(
+      ...(user.avatar_thumb?.url_list || []),
+      ...(user.avatar_medium?.url_list || []),
+      ...(user.avatar_larger?.url_list || []),
+      ...(user.avatar_300x300?.url_list || []),
+      ...(user.avatar_168x168?.url_list || []),
+    );
     return {
       uid: id(user.uid),
       secUid: user.sec_uid as string,
       nickname: user.nickname.slice(0, 100),
-      avatar:
-        typeof avatar === "string" && avatar.startsWith("https://")
-          ? avatar
-          : null,
-      fans: countValue(user.follower_count),
+      avatar,
+      fans: nullableCount(user.follower_count),
     };
   }
   async statistics(ids: string[]) {
@@ -342,14 +356,15 @@ export class OneApiDataProvider {
         // 星图作者 ID 与抖音 UID 不是同一命名空间，不能拿 item.author_id 与 UID 比较。
         const stats = result.stats ?? result.item?.stats;
         if (!stats) continue;
-        row.metrics = {
-          views: countValue(stats.watch_cnt),
-          likes: countValue(stats.like_cnt),
-          comments: countValue(stats.comment_cnt),
-          shares: countValue(stats.share_cnt),
-          collects:
-            stats.favorite_cnt == null ? null : countValue(stats.favorite_cnt),
+        const metrics = {
+          views: nullableCount(stats.watch_cnt),
+          likes: nullableCount(stats.like_cnt),
+          comments: nullableCount(stats.comment_cnt),
+          shares: nullableCount(stats.share_cnt),
+          collects: nullableCount(stats.favorite_cnt),
         };
+        if (Object.values(metrics).some((value) => value !== null))
+          row.metrics = metrics;
       }
     }
     return {

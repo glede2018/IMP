@@ -10,6 +10,24 @@ import {
 import { parseOneApiJson } from "../src/oneapi.js";
 const xhs = "67767bba000000001801cd2d",
   finder = "v2_1234567890_example@finder";
+test("视频号参数异常只显示简短提示，不暴露平台调试信息", async () => {
+  const p = new SocialOneApiProvider();
+  let calls = 0;
+  const error = {
+    message: "请求参数可能有误，请检查参数后重试。",
+    empty_reason: "bad_input", debug_id: "c47ebd6b", debug_info: "opaque-debug-data",
+  };
+  for (const response of [error, { code: 200, data: error }]) {
+    p.client.request = async () => { calls++; return response; };
+    await assert.rejects(p.profile("shipinhao", "sphSiligcZ1lm2i"), (e: Error) => {
+      assert.equal(e.message, "参数异常");
+      return true;
+    });
+  }
+  assert.equal(calls, 2);
+  p.client.request = async () => error;
+  await assert.rejects(p.videos("shipinhao", finder, finder, "0"), /^Error: 参数异常$/);
+});
 test("多平台输入隔离，ID 优先于分享文案，视频号只接受可解析的账号身份", () => {
   assert.equal(
     socialProfileInput("xiaohongshu", {
@@ -260,4 +278,38 @@ test("视频号封面携带独立令牌，优先使用签名后的媒体封面",
   assert.equal(wechatVideoCoverUrl(base, undefined), base);
   assert.equal(wechatVideoCoverUrl(base, "&token=abc&other=1"), base);
   assert.equal(wechatVideoCoverUrl("javascript:alert(1)", "&token=abc"), null);
+});
+
+test("其他平台头像跳过无效首选地址，并兼容快手 HTTP CDN", async () => {
+  const p = new SocialOneApiProvider();
+  p.client.request = async () => ({ user: {
+    userid: xhs, nickname: "测试", fans: 1,
+    images: "", imageb: "https://img.example/avatar.jpg",
+  } });
+  assert.equal((await p.profile("xiaohongshu", xhs)).avatar, "https://img.example/avatar.jpg");
+  p.client.request = async () => ({ result: 1, userProfile: {
+    profile: { user_id: "123456", user_name: "测试", headurl: "http://cdn.kwimgs.com/avatar.jpg" },
+    ownerCount: { fan: 1 },
+  } });
+  assert.equal((await p.profile("kuaishou", "123456")).avatar, "https://cdn.kwimgs.com/avatar.jpg");
+});
+
+test("快手按实际 timestamp 选择最新视频，小红书重复笔记不重复查询详情", async () => {
+  const p = new SocialOneApiProvider();
+  p.client.request = async () => ({ result: 1, pcursor: "no_more", feeds: [
+    { photo_id: "1", user_id: "123456", timestamp: 1795508400000, caption: "旧作品" },
+    { photo_id: "2", user_id: "123456", timestamp: 1795508420000, caption: "新作品" },
+  ] });
+  assert.equal((await p.videos("kuaishou", "123456", "123456", "0", 1)).videos[0].remoteId, "2");
+  let detailCalls = 0;
+  p.client.request = async (path) => {
+    if (path === "fetch_user_note_list") return { notes: [
+      { id: "1", type: "video", create_time: 1795508420 },
+      { id: "1", type: "video", create_time: 1795508420 },
+    ], has_more: false };
+    detailCalls++;
+    return { id: "1", user: { userid: xhs }, desc: "测试", liked_count: 1 };
+  };
+  assert.equal((await p.videos("xiaohongshu", xhs, xhs, "0")).videos.length, 1);
+  assert.equal(detailCalls, 1);
 });

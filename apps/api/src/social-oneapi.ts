@@ -1,11 +1,11 @@
 import { videoCoverUrl, wechatVideoCoverUrl } from "./video-cover.js";
 import {
-  countValue,
   DataProviderError,
   extractTags,
   type VideoData,
 } from "./douyin-data-provider.js";
-import { OneApiDataProvider, profileInput } from "./oneapi.js";
+import { OneApiDataProvider, profileInput, nullableCount } from "./oneapi.js";
+export { nullableCount } from "./oneapi.js";
 export const socialPlatforms = [
   "douyin",
   "xiaohongshu",
@@ -39,15 +39,22 @@ const validId = (value: unknown): string => {
     return value;
   throw invalid();
 };
-export const nullableCount = (value: unknown): bigint | null => {
-  if (value == null || value === "") return null;
-  try {
-    return countValue(value);
-  } catch {
-    return null;
-  }
-};
 function unwrap(data: any) {
+  // HTTP 成功不代表业务成功，优先保留平台明确返回的异常原因。
+  for (const result of [data, data?.data]) {
+    if (!result || typeof result !== "object") continue;
+    const failed = result.empty_reason === "bad_input" ||
+      result.success === false ||
+      (typeof result.result === "number" && result.result !== 1) ||
+      (result.code != null && ![0, 200].includes(Number(result.code)));
+    if (!failed) continue;
+    const message = typeof result.message === "string" ? result.message.trim() : "";
+    if (!message) continue;
+    throw new DataProviderError(
+      result.empty_reason === "bad_input" ? "invalid_input" : "platform_error",
+      result.empty_reason === "bad_input" ? "参数异常" : message.slice(0, 1000),
+    );
+  }
   if (
     !data ||
     typeof data !== "object" ||
@@ -66,8 +73,6 @@ function unwrap(data: any) {
   }
   return data;
 }
-const safeImage = (value: unknown) =>
-  typeof value === "string" && value.startsWith("https://") ? value : null;
 // 主动查询仅发送该平台白名单中的分享链接，禁止把任意地址交给第三方解析。
 export function socialProfileInput(
   platform: SocialPlatform,
@@ -191,7 +196,7 @@ export class SocialOneApiProvider {
       user: any,
       fans: unknown,
       nickname: unknown,
-      avatar: unknown;
+      avatar: string | null;
     if (platform === "xiaohongshu") {
       const data = unwrap(
         await this.client.request(
@@ -206,7 +211,7 @@ export class SocialOneApiProvider {
       user = data.user || data;
       uid = validId(user.userid ?? user.user_id);
       nickname = user.nickname;
-      avatar = user.images ?? user.imageb ?? user.avatar;
+      avatar = videoCoverUrl(user.images, user.imageb, user.avatar);
       fans = user.fans;
       if (!/^[a-f0-9]{24}$/i.test(uid)) throw invalid();
       if (!input.startsWith("https://")) assertOwner(uid, input);
@@ -226,7 +231,7 @@ export class SocialOneApiProvider {
       uid = validId(user.user_id);
       if (!/^\d+$/.test(uid)) throw invalid();
       nickname = user.user_name;
-      avatar = user.headurl ?? user.bigHeadUrls?.[0]?.url;
+      avatar = videoCoverUrl(user.headurl, ...(user.bigHeadUrls || []).map((image: any) => image.url));
       fans = data.userProfile.ownerCount?.fan;
       if (!input.startsWith("https://")) {
         if (/^\d+$/.test(input)) assertOwner(uid, input);
@@ -265,7 +270,7 @@ export class SocialOneApiProvider {
       uid = validId(user.username);
       assertOwner(uid, username);
       nickname = user.nickname;
-      avatar = user.head_url;
+      avatar = videoCoverUrl(user.head_url);
       fans = user.fans_count;
     }
     if (typeof nickname !== "string" || !nickname.trim()) throw invalid();
@@ -273,7 +278,7 @@ export class SocialOneApiProvider {
       uid,
       secUid: uid,
       nickname: nickname.slice(0, 100),
-      avatar: safeImage(avatar),
+      avatar,
       fans: nullableCount(fans),
     };
   }
@@ -331,7 +336,10 @@ export class SocialOneApiProvider {
     const videos: VideoData[] = [];
     const seen = new Set<string>();
     const ordered = [...page.rows].sort((a, b) => {
-      const time = (row: any) => Number(row.create_time ?? row.time ?? row.photo?.timestamp ?? 0);
+      const time = (row: any) => {
+        const value = Number(row.create_time ?? row.time ?? row.timestamp ?? row.photo?.timestamp ?? 0);
+        return value > 1e12 ? value : value * 1000;
+      };
       return time(b) - time(a);
     });
     for (const row of ordered) {
@@ -342,6 +350,7 @@ export class SocialOneApiProvider {
       if (platform === "xiaohongshu") {
         // 列表标题未必含完整话题，视频详情用于获取完整文案和标签。
         const remoteId = validId(row.note_id ?? row.id);
+        if (seen.has(remoteId)) continue;
         const details = unwrap(
           await this.client.request(
             "fetch_video_note_detail",
