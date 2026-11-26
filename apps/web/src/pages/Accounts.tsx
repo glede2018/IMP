@@ -13,9 +13,6 @@ import {
 } from "antd";
 import {
   PlusOutlined,
-  PlayCircleOutlined,
-  CaretRightOutlined,
-  RiseOutlined,
 } from "@ant-design/icons";
 import {
   fetchAccounts,
@@ -252,19 +249,6 @@ export default function Accounts() {
           >
             {formatFans(record.fans)}
           </div>
-          <div
-            className="yp-text-xs"
-            style={{
-              color:
-                (record.monthlyGrowth ?? 0) >= 0
-                  ? "var(--yp-state-success)"
-                  : "var(--yp-state-error)",
-            }}
-          >
-            月增 {(record.monthlyGrowth ?? 0) >= 0 ? "+" : ""}
-            {record.monthlyGrowth ?? "—"}
-            {record.monthlyGrowth === undefined ? "" : "w"}
-          </div>
         </div>
       ),
     },
@@ -451,68 +435,6 @@ export default function Accounts() {
             pageSize: 8,
             showSizeChanger: false,
             showTotal: (total) => `共 ${total} 条记录，每页 8 条`,
-          }}
-          expandable={{
-            expandedRowRender: (record) =>
-              record.topWorks && record.topWorks.length > 0 ? (
-                <div
-                  className="px-6 py-4"
-                  style={{ background: "var(--yp-primary-50)" }}
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <RiseOutlined style={{ color: "var(--yp-primary-600)" }} />
-                    <span
-                      className="yp-text-sm yp-font-semibold"
-                      style={{ color: "var(--yp-primary-800)" }}
-                    >
-                      TOP3 作品
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {record.topWorks.map((work, idx) => (
-                      <div key={idx} className="yp-card p-3 flex gap-3">
-                        <div
-                          className="w-20 h-14 rounded flex items-center justify-center flex-shrink-0"
-                          style={{ background: "var(--yp-neutral-200)" }}
-                        >
-                          <PlayCircleOutlined
-                            style={{
-                              fontSize: 24,
-                              color: "var(--yp-neutral-400)",
-                            }}
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div
-                            className="yp-text-sm yp-font-medium truncate"
-                            style={{ color: "var(--yp-neutral-900)" }}
-                          >
-                            {work.title}
-                          </div>
-                          <div
-                            className="flex items-center gap-1 mt-1 yp-text-xs"
-                            style={{ color: "var(--yp-neutral-500)" }}
-                          >
-                            <CaretRightOutlined style={{ fontSize: 12 }} />
-                            <span>{work.views}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div
-                  className="px-6 py-4 yp-text-xs"
-                  style={{
-                    background: "var(--yp-primary-50)",
-                    color: "var(--yp-neutral-500)",
-                  }}
-                >
-                  暂无作品数据
-                </div>
-              ),
-            rowExpandable: () => true,
           }}
         />
       </Card>

@@ -64,7 +64,7 @@ test("有独立负面参数时使用独立参数，模型必填参数必须提�
   assert.equal(result.parameters.negative_prompt, PRODUCT_VIEW_NEGATIVE);
 });
 
-test("人物固定三视图提示词支持单张参考图端口，无音色输入", () => {
+test("人物固定四视图提示词支持单张参考图端口，无音色输入", () => {
   const m = {
     ...model(),
     inputs: [
@@ -76,7 +76,7 @@ test("人物固定三视图提示词支持单张参考图端口，无音色输�
   assert.deepEqual(result.inputs.image, { id: "person-ref" });
   assert.ok(result.inputs.prompt.includes(PERSON_VIEW_POSITIVE));
   assert.ok(result.inputs.prompt.includes(PERSON_VIEW_NEGATIVE));
-  assert.equal(result.inputs.prompt.includes("产品设定稿"), false);
+  assert.equal(result.inputs.prompt.includes(PRODUCT_VIEW_POSITIVE), false);
   assert.throws(
     () => productViewPayload(m, ["a", "b"], {}, "person"),
     /当前参考图数量/,

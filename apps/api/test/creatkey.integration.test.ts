@@ -299,8 +299,8 @@ test("CreatKey 模板导入、槽位替换、视频归档与通用图片任务�
     );
     const viewSubmission = submissions.find((s) => s.path === "/model-jobs");
     assert.equal(viewSubmission.body.inputs.images.length, 2);
-    assert.ok(viewSubmission.body.inputs.prompt.includes("正交投影四视图"));
-    assert.ok(viewSubmission.body.inputs.prompt.includes("等轴测图"));
+    assert.ok(viewSubmission.body.inputs.prompt.includes("商品标准四视图"));
+    assert.ok(viewSubmission.body.inputs.prompt.includes("特写出现完整产品"));
     const rawDenied = await call(
       `/templates/${imported.body.id}/creations`,
       "POST",
@@ -596,10 +596,10 @@ test("CreatKey 模板导入、槽位替换、视频归档与通用图片任务�
       .filter((s) => s.path === "/model-jobs")
       .at(-1)!;
     assert.equal(personSubmission.body.inputs.images.length, 2);
-    assert.ok(personSubmission.body.inputs.prompt.includes("角色转面三视图"));
-    assert.ok(personSubmission.body.inputs.prompt.includes("脸部不一致"));
+    assert.ok(personSubmission.body.inputs.prompt.includes("角色标准设定四视图"));
+    assert.ok(personSubmission.body.inputs.prompt.includes("全身图缺少脚部"));
     assert.equal(
-      personSubmission.body.inputs.prompt.includes("产品设定稿"),
+      personSubmission.body.inputs.prompt.includes("商品标准四视图"),
       false,
     );
     const personPicker = await call(
