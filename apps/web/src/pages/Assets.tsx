@@ -284,12 +284,6 @@ export default function Assets() {
             scroll={{ x: 1100 }}
             columns={[
               {
-                title: type === "person" ? "人物素材 ID" : "素材 ID",
-                dataIndex: "id",
-                width: 200,
-                ellipsis: true,
-              },
-              {
                 title: type === "person" ? "人物素材名称" : "素材名称",
                 render: (_, m) => title(m),
                 width: 260,
