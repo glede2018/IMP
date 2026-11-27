@@ -6,6 +6,11 @@ import { shanghaiDate } from "./douyin-data-provider.js";
 const fields = ["views", "likes", "comments", "shares", "collects"] as const;
 type Metric = (typeof fields)[number];
 type Range = { first: Date; last: Date };
+// 每天零点开始的采集归属前一天；实际采集时间保留，用次日整天容纳延迟及重试。
+export const snapshotRange = (range: Range): Range => ({
+  first: new Date(range.first.getTime() + 86400000),
+  last: new Date(range.last.getTime() + 86400000),
+});
 type VideoWindow = { videoId: string; capturedAt: Date | null } & Record<
   Metric | `latest_${Metric}`,
   bigint | null
@@ -26,13 +31,14 @@ export async function videoWindowMetrics(
   range: Range,
 ) {
   if (!ids.length) return new Map<string, VideoWindow>();
+  const snapshots = snapshotRange(range);
   const columns = Prisma.join(
     fields.flatMap((field) => {
       // 列名来自固定白名单，所有用户参数均通过 Prisma 绑定。
       const column = Prisma.raw(`"${field}"`);
       const latest = Prisma.raw(`"latest_${field}"`);
       return [
-        Prisma.sql`CASE WHEN l."capturedAt" >= ${range.first.toISOString()}::timestamp
+        Prisma.sql`CASE WHEN l."capturedAt" >= ${snapshots.first.toISOString()}::timestamp
         THEN CASE WHEN v."publishedAt" >= ${range.first.toISOString()}::timestamp
           THEN l.${column} ELSE l.${column} - b.${column} END
         ELSE NULL END AS ${column}`,
@@ -45,12 +51,12 @@ export async function videoWindowMetrics(
     FROM "PlatformVideo" v
     LEFT JOIN LATERAL (
       SELECT "capturedAt", views, likes, comments, shares, collects
-      FROM "VideoMetricSample" WHERE source=${metricSource()} AND "videoId"=v.id AND "capturedAt" < ${range.last.toISOString()}::timestamp
+      FROM "VideoMetricSample" WHERE source=${metricSource()} AND "videoId"=v.id AND "capturedAt" < ${snapshots.last.toISOString()}::timestamp
       ORDER BY "capturedAt" DESC LIMIT 1
     ) l ON TRUE
     LEFT JOIN LATERAL (
       SELECT views, likes, comments, shares, collects FROM "VideoMetricSample"
-      WHERE source=${metricSource()} AND "videoId"=v.id AND "capturedAt" < ${range.first.toISOString()}::timestamp
+      WHERE source=${metricSource()} AND "videoId"=v.id AND "capturedAt" < ${snapshots.first.toISOString()}::timestamp
       ORDER BY "capturedAt" DESC LIMIT 1
     ) b ON TRUE
     WHERE v.source=${metricSource()} AND v."organizationId"=${org} AND v.id IN (${Prisma.join(ids)})
@@ -66,19 +72,20 @@ export async function accountWindowMetrics(
   range: Range,
 ) {
   if (!ids.length) return new Map<string, AccountWindow>();
+  const snapshots = snapshotRange(range);
   const rows = await db.$queryRaw<AccountWindow[]>(Prisma.sql`
     SELECT a.id AS "accountId", l."capturedAt",
-      CASE WHEN l."capturedAt" >= ${range.first.toISOString()}::timestamp THEN l.fans ELSE NULL END AS fans,
-      CASE WHEN l."capturedAt" >= ${range.first.toISOString()}::timestamp THEN l.fans - b.fans ELSE NULL END AS "netFans"
+      CASE WHEN l."capturedAt" >= ${snapshots.first.toISOString()}::timestamp THEN l.fans ELSE NULL END AS fans,
+      CASE WHEN l."capturedAt" >= ${snapshots.first.toISOString()}::timestamp THEN l.fans - b.fans ELSE NULL END AS "netFans"
     FROM "Account" a
     LEFT JOIN LATERAL (
       SELECT "capturedAt", fans FROM "AccountMetricSample"
-      WHERE source=${metricSource()} AND "accountId"=a.id AND "capturedAt" < ${range.last.toISOString()}::timestamp
+      WHERE source=${metricSource()} AND "accountId"=a.id AND "capturedAt" < ${snapshots.last.toISOString()}::timestamp
       ORDER BY "capturedAt" DESC LIMIT 1
     ) l ON TRUE
     LEFT JOIN LATERAL (
       SELECT fans FROM "AccountMetricSample"
-      WHERE source=${metricSource()} AND "accountId"=a.id AND "capturedAt" < ${range.first.toISOString()}::timestamp
+      WHERE source=${metricSource()} AND "accountId"=a.id AND "capturedAt" < ${snapshots.first.toISOString()}::timestamp
       ORDER BY "capturedAt" DESC LIMIT 1
     ) b ON TRUE
     WHERE a."organizationId"=${org} AND a.id IN (${Prisma.join(ids)})
@@ -86,7 +93,7 @@ export async function accountWindowMetrics(
   return new Map(rows.map((row) => [row.accountId, row]));
 }
 
-// 按北京时间逐日读取快照边界，只汇总可计算的增量，全部缺失时保留空值。
+// 按北京时间的数据所属日读取次日采集快照，只汇总可计算的增量，全部缺失时保留空值。
 // Prisma 的时间字段以 UTC 存入无时区 timestamp，日期序列必须使用相同类型，避免会话时区改变比较边界。
 export async function videoDailyViews(
   db: Database,
@@ -110,18 +117,18 @@ export async function videoDailyViews(
       SUM(m.views) AS views
     FROM generate_series(${range.first.toISOString()}::timestamp, ${range.last.toISOString()}::timestamp - INTERVAL '1 day', INTERVAL '1 day') d(day)
     LEFT JOIN LATERAL (
-      SELECT CASE WHEN l."capturedAt" >= d.day
+      SELECT CASE WHEN l."capturedAt" >= d.day + INTERVAL '1 day'
         THEN CASE WHEN v."publishedAt" >= d.day THEN l.views ELSE l.views - b.views END
         ELSE NULL END AS views
       FROM "PlatformVideo" v
       LEFT JOIN LATERAL (
         SELECT "capturedAt", views FROM "VideoMetricSample"
-        WHERE source=${metricSource()} AND "videoId"=v.id AND "capturedAt" < d.day + INTERVAL '1 day'
+        WHERE source=${metricSource()} AND "videoId"=v.id AND "capturedAt" < d.day + INTERVAL '2 days'
         ORDER BY "capturedAt" DESC LIMIT 1
       ) l ON TRUE
       LEFT JOIN LATERAL (
         SELECT views FROM "VideoMetricSample"
-        WHERE source=${metricSource()} AND "videoId"=v.id AND "capturedAt" < d.day
+        WHERE source=${metricSource()} AND "videoId"=v.id AND "capturedAt" < d.day + INTERVAL '1 day'
         ORDER BY "capturedAt" DESC LIMIT 1
       ) b ON TRUE
       WHERE v.source=${metricSource()} AND v."organizationId"=${org}

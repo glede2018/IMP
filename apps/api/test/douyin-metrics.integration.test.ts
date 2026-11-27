@@ -21,8 +21,8 @@ test("边界统计保留缺失基线、负增量、新视频累计值和租户�
     first: new Date("2026-11-01T00:00:00Z"),
     last: new Date("2026-11-02T00:00:00Z"),
   };
-  const before = new Date("2026-10-31T23:00:00Z"),
-    current = new Date("2026-11-01T12:00:00Z");
+  const before = new Date("2026-11-01T23:00:00Z"),
+    current = new Date("2026-11-02T12:00:00Z");
   try {
     const account = await db.account.create({
       data: {
@@ -70,7 +70,7 @@ test("边界统计保留缺失基线、负增量、新视频累计值和租户�
       data: [
         sample(videos[0].id, before, 100n),
         sample(videos[0].id, current, 90n),
-        sample(videos[0].id, range.last, 999n),
+        sample(videos[0].id, new Date(range.last.getTime() + 86400000), 999n),
         sample(videos[1].id, current, 50n),
         sample(videos[2].id, current, 20n),
         sample(videos[3].id, before, 100n),
@@ -92,8 +92,8 @@ test("边界统计保留缺失基线、负增量、新视频累计值和租户�
         },
         {
           accountId: account.id,
-          bucket: range.last,
-          capturedAt: range.last,
+          bucket: new Date(range.last.getTime() + 86400000),
+          capturedAt: new Date(range.last.getTime() + 86400000),
           fans: 999n,
         },
         {

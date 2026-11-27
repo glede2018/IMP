@@ -83,7 +83,7 @@ test("Douyin data: live pipeline, tenant/role isolation, immutable tags, snapsho
   const now = new Date();
   const published = new Date(now.getTime() - 3 * 86400000);
   const yesterday = new Date(now.getTime() - 86400000);
-  const date = shanghaiDate(now);
+  const date = shanghaiDate(yesterday);
   const template = await db.template.create({
     data: {
       organizationId: org.id,

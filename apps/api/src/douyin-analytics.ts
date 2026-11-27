@@ -53,6 +53,7 @@ import {
   accountWindowMetrics,
   videoWindowMetrics,
   videoDailyViews,
+  snapshotRange,
 } from "./douyin-metrics.js";
 import { SessionGuard, type AuthRequest } from "./auth.js";
 import { hasPermission, permissionsFor } from "./permissions.js";
@@ -1002,6 +1003,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
   }
   async overview(org: string, query: DateQuery) {
     const range = dateRange(query);
+    const snapshots = snapshotRange(range);
     const filter: Prisma.AccountWhereInput = {
       organizationId: org,
       platform: oneapiEnabled()
@@ -1123,7 +1125,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       .filter(
         (v) =>
           v.publishedAt >= range.first ||
-          (v.capturedAt && v.capturedAt >= range.first),
+          (v.capturedAt && v.capturedAt >= snapshots.first),
       );
     // 预先分组，避免每个账号和模板重复扫描全部视频。
     const byAccount = new Map<string, typeof videos>();

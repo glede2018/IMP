@@ -62,7 +62,7 @@ test("OneAPI 同步扫码授权账号：权限和组织隔离、零点计划、�
           {
             aweme_id: "7584380037021830400",
             desc: "产品 #烘焙 #新品",
-            create_time: Math.floor(Date.now() / 1000) - 86400,
+            create_time: Math.floor(Date.now() / 1000) - 3 * 86400,
             author: { uid: "63700340656", sec_uid: secUid },
           },
         ],
@@ -323,8 +323,8 @@ test("OneAPI 同步扫码授权账号：权限和组织隔离、零点计划、�
         "T00:00:00+08:00",
     );
     const dailyRange = {
-      first: today,
-      last: new Date(today.getTime() + 86400000),
+      first: new Date(today.getTime() - 86400000),
+      last: today,
     };
     const daily = await videoDailyViews(
       db as any,
@@ -343,7 +343,7 @@ test("OneAPI 同步扫码授权账号：权限和组织隔离、零点计划、�
         .views,
       100,
     );
-    const todayText = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+    const todayText = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date(Date.now() - 86400000));
     // 历史封面不重新采集也应在返回时转换成浏览器兼容格式。
     await db.platformVideo.update({ where: { id: video.id }, data: {
       coverUrl: "https://sns-i14-ae.rednotecdn.com/frame/a.webp?imageView2/2/format/heif&sign=test",
