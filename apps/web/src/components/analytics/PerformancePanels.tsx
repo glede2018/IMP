@@ -211,7 +211,9 @@ export function AccountPerformance({
         <Table<LiveOverview["accounts"][number]>
           rowKey="id"
           dataSource={rows}
-          scroll={{ x: 1150 }}
+          className="dc-account-performance-table"
+          tableLayout="fixed"
+          scroll={{ x: 1200 }}
           pagination={pagination}
           locale={{ emptyText: empty }}
           columns={[
@@ -219,6 +221,7 @@ export function AccountPerformance({
               title: "账号",
               key: "name",
               width: 280,
+              align: "left",
               render: (_, a) => (
                 <>
                   <Button
@@ -244,17 +247,23 @@ export function AccountPerformance({
                 </>
               ),
             },
-            { title: "发布数", dataIndex: "published", align: "right" },
+            {
+              title: "发布数",
+              dataIndex: "published",
+              align: "center",
+              width: 80,
+            },
             {
               title: "播放量",
               key: "views",
-              align: "right",
+              align: "center",
+              width: 110,
               render: (_, a) => metricValue(a.metrics, "views"),
             },
             ...interactionKeys.map((key) => ({
               title: interactionLabels[key],
               key,
-              align: "right" as const,
+              align: "center" as const,
               width: 155,
               render: (_: unknown, a: LiveOverview["accounts"][number]) => (
                 <InteractionMetric count={a.metrics[key]} rate={a.rates[key]} />
@@ -263,7 +272,8 @@ export function AccountPerformance({
             {
               title: "净增粉丝",
               dataIndex: "netFans",
-              align: "right",
+              align: "center",
+              width: 110,
               render: signed,
             },
           ]}

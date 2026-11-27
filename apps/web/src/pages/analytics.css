@@ -475,6 +475,9 @@
 .dc-video-details-table .ant-table-cell {
   overflow-wrap: anywhere;
 }
+.dc-account-performance-table .ant-table-cell:not(:first-child) {
+  font-variant-numeric: tabular-nums;
+}
 .dc-performance-placeholder {
   min-height: 110px;
   display: grid;
