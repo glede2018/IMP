@@ -7,6 +7,7 @@ import {
 import {
   metricSource,
   nextDailySync,
+  nextOneApiRetry,
   oneapiEnabled,
   videoSyncLimit,
 } from "./oneapi.js";
@@ -37,6 +38,12 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { Database } from "./database.js";
 import { summarizeVideoMetrics, sumKnown } from "./analytics-summary.js";
+import {
+  collectionLog,
+  collectionErrorDetails,
+  withCollectionContext,
+  updateCollectionContext,
+} from "./collection-log.js";
 import {
   accountWindowMetrics,
   videoWindowMetrics,
@@ -101,6 +108,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private busy = false;
   private discoveryCursor?: string;
+  private retriesRecovered = false;
   private social = new SocialOneApiProvider();
   constructor(
     private db: Database,
@@ -260,6 +268,10 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
     this.busy = true;
     try {
       const now = new Date();
+      if (oneapiEnabled() && !this.retriesRecovered) {
+        await this.recoverLegacyRetries(now);
+        this.retriesRecovered = true;
+      }
       // 显式启用能力后分页发现账号，每轮推进游标，避免只处理前一百个账号。
       if (
         oneapiEnabled() ||
@@ -309,7 +321,14 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           OR: [
             { status: { notIn: terminalStates } },
             {
-              account: { dataProvider: "oneapi" },
+              account: {
+                OR: [
+                  { dataProvider: "oneapi" },
+                  ...(oneapiEnabled()
+                    ? [{ authorization: { is: { mode: "live" } } }]
+                    : []),
+                ],
+              },
               nextAttemptAt: { lte: now },
             },
           ],
@@ -321,16 +340,101 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         orderBy: { updatedAt: "asc" },
         take: 10,
       });
-      for (const state of states) await this.run(state.id);
-    } catch {
-      /* 不记录凭据或上游响应，下一个定时任务继续处理持久化作业。 */
+      if (states.length)
+        collectionLog("log", "social.scheduler.batch", {
+          scheduled: states.length,
+        });
+      for (const state of states) {
+        try {
+          await this.run(state.id);
+        } catch {
+          // 具体错误已由账号任务记录，单个任务异常不能阻断其他账号。
+        }
+      }
+    } catch (error) {
+      collectionLog(
+        "error",
+        "social.scheduler.failed",
+        collectionErrorDetails(error),
+      );
     } finally {
       this.busy = false;
     }
   }
+  async recoverLegacyRetries(now = new Date(), organizationId?: string) {
+    let cursor: string | undefined;
+    let recovered = 0;
+    do {
+      const rows = await this.db.douyinSyncState.findMany({
+        where: {
+          status: {
+            in: [
+              "network_error",
+              "rate_limited",
+              "platform_error",
+              "failed",
+              "superseded",
+            ],
+          },
+          failures: { gt: 0 },
+          lastAttemptAt: { not: null },
+          nextAttemptAt: { gt: now },
+          account: {
+            ...(organizationId ? { organizationId } : {}),
+            OR: [
+              { dataProvider: "oneapi" },
+              { authorization: { is: { mode: "live" } } },
+            ],
+          },
+          ...(cursor ? { id: { gt: cursor } } : {}),
+        },
+        orderBy: { id: "asc" },
+        take: 100,
+      });
+      for (const row of rows) {
+        // 仅迁移旧规则中直接排到次日零点的临时失败，不覆盖正常退避与正在执行的任务。
+        if (
+          row.nextAttemptAt?.getTime() !==
+          nextDailySync(row.lastAttemptAt!).getTime()
+        )
+          continue;
+        const nextAttemptAt = nextOneApiRetry(row.failures - 1, now);
+        if (nextAttemptAt >= row.nextAttemptAt!) continue;
+        const result = await this.db.douyinSyncState.updateMany({
+          where: {
+            id: row.id,
+            status: row.status,
+            failures: row.failures,
+            nextAttemptAt: row.nextAttemptAt,
+            OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }],
+          },
+          data: { nextAttemptAt },
+        });
+        recovered += result.count;
+      }
+      cursor = rows.length === 100 ? rows.at(-1)!.id : undefined;
+    } while (cursor);
+    if (recovered)
+      collectionLog("log", "social.scheduler.retries_recovered", { recovered });
+    return recovered;
+  }
   async run(id: string) {
-    const runId = randomUUID(),
-      now = new Date();
+    const runId = randomUUID();
+    return withCollectionContext({ runId, stateId: id }, async () => {
+      try {
+        await this.runTask(id, runId);
+      } catch (error) {
+        collectionLog(
+          "error",
+          "social.task.unhandled",
+          collectionErrorDetails(error),
+        );
+        throw error;
+      }
+    });
+  }
+  private async runTask(id: string, runId: string) {
+    const now = new Date();
     const claimed = await this.db.douyinSyncState.updateMany({
       where: {
         id,
@@ -352,14 +456,38 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       where: { id },
       include: { account: { include: { authorization: true } } },
     });
+    updateCollectionContext({
+      accountId: state.accountId,
+      platform: state.account.platform,
+      task: state.kind,
+      phase: "prepare",
+    });
+    collectionLog("log", "social.task.started", { provider: metricSource() });
     let processed = 0;
     const settle = async (
       data: Prisma.DouyinSyncStateUpdateManyMutationInput,
-    ) =>
-      this.db.douyinSyncState.updateMany({
+    ) => {
+      const result = await this.db.douyinSyncState.updateMany({
         where: { id, runId },
         data: { ...data, runId: null, leaseUntil: null },
       });
+      const status = typeof data.status === "string" ? data.status : "unknown";
+      collectionLog(
+        !result.count || status !== "success" ? "warn" : "log",
+        "social.task.finished",
+        {
+          status,
+          persisted: result.count > 0,
+          processed,
+          durationMs: Date.now() - now.getTime(),
+          nextAttemptAt:
+            data.nextAttemptAt instanceof Date
+              ? data.nextAttemptAt.toISOString()
+              : null,
+        },
+      );
+      return result;
+    };
     try {
       const thirdParty = oneapiEnabled();
       const reason = this.accountBlocked(state.account, state.kind);
@@ -444,6 +572,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       // 视频分页复用解析后的身份；粉丝任务每天刷新一次用户资料。
       let profile: SocialProfile | undefined;
       if (thirdParty && (state.kind === "fans" || !secUid || !uid)) {
+        updateCollectionContext({ phase: "profile" });
         if (!isSocialPlatform(state.account.platform))
           throw new DataProviderError("unsupported", "不支持该平台");
         profile = await this.social.profile(
@@ -488,6 +617,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         });
       }
       if (state.kind === "fans") {
+        updateCollectionContext({ phase: "fans" });
         const fans = thirdParty
           ? profile!.fans
           : await this.source.fans(token, credential!.openId);
@@ -516,6 +646,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           nextAttemptAt: nextDailySync(),
         });
       } else {
+        updateCollectionContext({ phase: "videos" });
         if (state.cursor === "0")
           await this.db.douyinSyncState.updateMany({
             where: { id, runId },
@@ -648,25 +779,32 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
               "同步失败，已有数据已保留，稍后重试。",
               true,
             );
+      collectionLog("error", "social.task.failed", {
+        state: e.state,
+        processed,
+        durationMs: Date.now() - now.getTime(),
+        ...collectionErrorDetails(error),
+      });
       await settle({
         status: e.state,
         ...(oneapiEnabled() ? { cursor: "0" } : {}),
         message: e.message,
         failures: { increment: 1 },
-        nextAttemptAt:
-          state.account.dataProvider === "oneapi"
-            ? nextDailySync()
-            : terminalStates.includes(e.state)
-              ? null
-              : new Date(
-                  Date.now() +
-                    (e.retryable
-                      ? Math.min(
-                          3600000,
-                          60000 * 2 ** Math.min(state.failures, 6),
-                        )
-                      : 3600000),
-                ),
+        nextAttemptAt: oneapiEnabled()
+          ? e.retryable
+            ? nextOneApiRetry(state.failures)
+            : nextDailySync()
+          : terminalStates.includes(e.state)
+            ? null
+            : new Date(
+                Date.now() +
+                  (e.retryable
+                    ? Math.min(
+                        3600000,
+                        60000 * 2 ** Math.min(state.failures, 6),
+                      )
+                    : 3600000),
+              ),
       });
     }
   }

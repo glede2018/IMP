@@ -366,7 +366,7 @@ test("OneAPI 同步扫码授权账号：权限和组织隔离、零点计划、�
       where: { id: videoState.id },
     });
     assert.equal(failed.status, "quota_exhausted");
-    assert.equal(failed.nextAttemptAt, null);
+    assert.equal(failed.nextAttemptAt!.getUTCHours(), 16);
     assert.equal(
       (
         await db.videoMetricSample.findUniqueOrThrow({

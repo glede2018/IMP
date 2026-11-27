@@ -235,7 +235,10 @@ test("四平台 OneAPI 独立绑定：无需 OAuth、预览确认、初始化、
       await request("/analytics/social/overview", cookie)
     ).json();
     assert.equal(overview.videos.length, 4);
-    assert.equal(overview.videos[0].coverUrl, "https://img.example/video-cover.jpg");
+    assert.equal(
+      overview.videos[0].coverUrl,
+      "https://img.example/video-cover.jpg",
+    );
     assert.equal(overview.videos[0].latest.collects, 10);
     assert.equal(overview.accounts.length, 4);
     const filtered = await (
@@ -280,11 +283,14 @@ test("四平台 OneAPI 独立绑定：无需 OAuth、预览确认、初始化、
       listCalls++;
       return {
         videos: Array.from({ length: 3 }, (_, i) => ({
-          remoteId: `limited-${i}`, title: `视频${i}`, tags: [],
+          remoteId: `limited-${i}`,
+          title: `视频${i}`,
+          tags: [],
           publishedAt: new Date(Date.now() - i * 1000),
           metrics: { views: 5n, likes: 1n, comments: 0n, shares: 0n },
         })),
-        hasMore: true, cursor: "older-page",
+        hasMore: true,
+        cursor: "older-page",
       };
     };
     try {
@@ -292,17 +298,32 @@ test("四平台 OneAPI 独立绑定：无需 OAuth、预览确认、初始化、
         where: { accountId_kind: { accountId: accountIds[0], kind: "videos" } },
       });
       for (let run = 0; run < 2; run++) {
-        await db.douyinSyncState.update({ where: { id: videoState.id }, data: { nextAttemptAt: null } });
+        await db.douyinSyncState.update({
+          where: { id: videoState.id },
+          data: { nextAttemptAt: null },
+        });
         await service.run(videoState.id);
-        const completed = await db.douyinSyncState.findUniqueOrThrow({ where: { id: videoState.id } });
+        const completed = await db.douyinSyncState.findUniqueOrThrow({
+          where: { id: videoState.id },
+        });
         assert.equal(completed.processed, 2);
         assert.equal(completed.cursor, "0");
         assert.equal(completed.status, "success");
         assert.equal(completed.nextAttemptAt!.getUTCHours(), 16);
       }
       assert.equal(listCalls, 2);
-      assert.equal(await db.platformVideo.count({ where: { accountId: accountIds[0], remoteId: "limited-2" } }), 0);
-      assert.equal(await db.platformVideo.count({ where: { accountId: accountIds[0], remoteId: "same-video-id" } }), 1);
+      assert.equal(
+        await db.platformVideo.count({
+          where: { accountId: accountIds[0], remoteId: "limited-2" },
+        }),
+        0,
+      );
+      assert.equal(
+        await db.platformVideo.count({
+          where: { accountId: accountIds[0], remoteId: "same-video-id" },
+        }),
+        1,
+      );
     } finally {
       SocialOneApiProvider.prototype.videos = normalVideos;
       if (savedLimit === undefined) delete process.env.ONEAPI_VIDEO_SYNC_LIMIT;
@@ -324,6 +345,8 @@ test("四平台 OneAPI 独立绑定：无需 OAuth、预览确认、初始化、
     assert.equal(failed.nextAttemptAt!.getUTCHours(), 16);
     assert.ok(failed.nextAttemptAt! > new Date());
     const beforeTick = calls;
+    const recover = service.recoverLegacyRetries.bind(service);
+    service.recoverLegacyRetries = (now) => recover(now, org.id);
     await service.tick();
     assert.equal(calls, beforeTick);
   } finally {

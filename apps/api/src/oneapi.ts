@@ -1,4 +1,7 @@
 import { videoCoverUrl } from "./video-cover.js";
+import { randomUUID } from "node:crypto";
+import { collectionLog, collectionErrorDetails } from "./collection-log.js";
+import { waitForOneApiSlot } from "./oneapi-rate-limit.js";
 import {
   countValue,
   DataProviderError,
@@ -9,6 +12,16 @@ import {
 export const oneapiEnabled = () =>
   process.env.DOUYIN_DATA_PROVIDER === "oneapi";
 export const metricSource = () => (oneapiEnabled() ? "oneapi_v2" : "official");
+
+// 临时失败在当天补偿，不推迟下一轮北京时间零点的正常采集。
+export function nextOneApiRetry(failures: number, now = new Date()) {
+  const minutes = [1, 2, 3, 5][
+    Math.min(3, Math.max(0, Math.floor(failures)))
+  ];
+  return new Date(
+    Math.min(now.getTime() + minutes * 60000, nextDailySync(now).getTime()),
+  );
+}
 
 // 平台未提供或返回无效指标时保留为空，不能补零或丢弃其他有效指标。
 export const nullableCount = (value: unknown): bigint | null => {
@@ -103,7 +116,10 @@ export function parseOneApiVideo(
   return {
     remoteId,
     title: row.desc.slice(0, 4000),
-    coverUrl: videoCoverUrl(...(row.video?.cover?.url_list || []), ...(row.video?.origin_cover?.url_list || [])),
+    coverUrl: videoCoverUrl(
+      ...(row.video?.cover?.url_list || []),
+      ...(row.video?.origin_cover?.url_list || []),
+    ),
     publishedAt: new Date(time * 1000),
     tags: extractTags({ ...row, title: row.desc }),
     metrics: null,
@@ -135,15 +151,47 @@ export class OneApiDataProvider {
       | "kuaishou"
       | "wechat-channels-v2" = "douyin-app",
   ): Promise<any> {
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+    const requestInfo = {
+      requestId,
+      endpoint: `/api/${namespace}/${path}`,
+      namespace,
+      platform: {
+        "douyin-app": "douyin",
+        "xiaohongshu-v2": "xiaohongshu",
+        kuaishou: "kuaishou",
+        "wechat-channels-v2": "shipinhao",
+      }[namespace],
+    };
     const key = process.env.ONEAPI_API_KEY?.trim();
-    if (!key)
+    if (!key) {
+      collectionLog("error", "oneapi.request.blocked", {
+        ...requestInfo,
+        state: "permission_required",
+      });
       throw new DataProviderError(
         "permission_required",
         "未配置 OneAPI 密钥。",
       );
+    }
     // 每次请求独立计时；首次失败后重试两次，不输出密钥或上游原始响应。
     for (let attempt = 0; attempt < 3; attempt++) {
+      const { queueWaitMs, rps } = await waitForOneApiSlot();
       const signal = AbortSignal.timeout(30000);
+      const attemptStartedAt = Date.now();
+      let requestPhase = "connect";
+      let httpStatus: number | undefined;
+      let upstreamCode: number | undefined;
+      const attemptInfo = {
+        ...requestInfo,
+        attempt: attempt + 1,
+        maxAttempts: 3,
+        timeoutMs: 30000,
+        queueWaitMs,
+        rps,
+      };
+      collectionLog("log", "oneapi.request.started", attemptInfo);
       try {
         const response = await fetch(
           `https://api.getoneapi.com/api/${namespace}/${path}`,
@@ -158,6 +206,8 @@ export class OneApiDataProvider {
             body: JSON.stringify(body),
           },
         );
+        httpStatus = response.status;
+        requestPhase = "validate_http";
         if (response.status === 401 || response.status === 403)
           throw new DataProviderError(
             "permission_required",
@@ -175,10 +225,13 @@ export class OneApiDataProvider {
             "OneAPI 服务暂时不可用。",
             true,
           );
-        const payload = parseOneApiJson(await response.text()) as Record<
-          string,
-          any
-        >;
+        requestPhase = "read_response";
+        const responseText = await response.text();
+        requestPhase = "parse_response";
+        const payload = parseOneApiJson(responseText) as Record<string, any>;
+        requestPhase = "validate_response";
+        if (Number.isFinite(Number(payload.code)))
+          upstreamCode = Number(payload.code);
         if (Number(payload.code) === 301)
           throw new DataProviderError(
             "quota_exhausted",
@@ -198,8 +251,31 @@ export class OneApiDataProvider {
         const data = payload.data;
         if (data.status_code !== undefined && Number(data.status_code) !== 0)
           throw invalid();
+        collectionLog("log", "oneapi.request.succeeded", {
+          ...attemptInfo,
+          httpStatus,
+          upstreamCode,
+          durationMs: Date.now() - attemptStartedAt,
+          totalDurationMs: Date.now() - startedAt,
+        });
         return data;
       } catch (error) {
+        const timeout =
+          signal.aborted ||
+          (error instanceof Error && error.name === "TimeoutError");
+        collectionLog(attempt < 2 ? "warn" : "error", "oneapi.request.failed", {
+          ...attemptInfo,
+          requestPhase,
+          httpStatus,
+          upstreamCode,
+          timeout,
+          durationMs: Date.now() - attemptStartedAt,
+          totalDurationMs: Date.now() - startedAt,
+          willRetry: attempt < 2,
+          state:
+            error instanceof DataProviderError ? error.state : "network_error",
+          ...collectionErrorDetails(error),
+        });
         if (attempt < 2) continue;
         if (error instanceof DataProviderError)
           throw new DataProviderError(
@@ -207,8 +283,6 @@ export class OneApiDataProvider {
             `${error.message}（已重试 2 次）`,
             error.retryable,
           );
-        const timeout = signal.aborted ||
-          (error instanceof Error && error.name === "TimeoutError");
         throw new DataProviderError(
           "network_error",
           timeout
@@ -276,7 +350,10 @@ export class OneApiDataProvider {
       aweme_ids: ids,
     });
     // 批量接口直接返回视频对象，单条接口使用 item_id / item 包装；两种格式分别校验。
-    if (data.base_resp?.status_code != null && Number(data.base_resp.status_code) !== 0)
+    if (
+      data.base_resp?.status_code != null &&
+      Number(data.base_resp.status_code) !== 0
+    )
       throw invalid();
     const rows = Array.isArray(data)
       ? data
@@ -320,7 +397,9 @@ export class OneApiDataProvider {
           return [parsed.remoteId, parsed] as const;
         }),
       ).values(),
-    ].sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime()).slice(0, limit);
+    ]
+      .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+      .slice(0, limit);
     const hasMore = !!data.has_more;
     const next = String(data.max_cursor ?? "0");
     if (
