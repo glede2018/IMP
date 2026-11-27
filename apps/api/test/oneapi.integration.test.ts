@@ -77,7 +77,8 @@ test("OneAPI 同步扫码授权账号：权限和组织隔离、零点计划、�
         "OneAPI 余额不足，请充值后手动重新同步。",
       );
     }
-    return {
+    if (path !== "fetch_multiple_video_statistics_v2") throw new Error("不应调用单视频接口");
+    return { items: [{
       item_id: "7584380037021830400",
       exist: true,
       stats: {
@@ -87,7 +88,7 @@ test("OneAPI 同步扫码授权账号：权限和组织隔离、零点计划、�
         share_cnt: "5",
         favorite_cnt: "3",
       },
-    };
+    }] };
   };
   const app = await createApp();
   await app.listen(0, "127.0.0.1");

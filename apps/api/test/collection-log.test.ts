@@ -104,6 +104,20 @@ test("请求日志关联账号任务，记录重试、HTTP429和解析错误，�
     assert.equal(logs.at(-1).level, "error");
     logs.length = 0;
     globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 301, data: null }));
+    await assert.rejects(
+      new OneApiDataProvider().request("fetch_user_data", {}),
+    );
+    assert.equal(
+      logs.filter((l) => l.event === "oneapi.request.started").length,
+      1,
+    );
+    assert.equal(logs.at(-1).upstreamCode, 301);
+    assert.equal(logs.at(-1).willRetry, false);
+    assert.equal(logs.at(-1).state, "quota_exhausted");
+    assert.equal(logs.at(-1).level, "error");
+    logs.length = 0;
+    globalThis.fetch = async () =>
       new Response("secret-response", { status: 200 });
     await assert.rejects(
       new OneApiDataProvider().request("fetch_user_data", {}),

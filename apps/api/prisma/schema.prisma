@@ -382,6 +382,7 @@ model AccountMetricSample {
  @@index([accountId,capturedAt])
 }
 model DouyinSyncState {
+ videoProgress Json @default("{}")
  id String @id @default(cuid())
  accountId String
  account Account @relation(fields:[accountId],references:[id],onDelete:Cascade)

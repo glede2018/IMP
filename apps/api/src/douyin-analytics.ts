@@ -1,4 +1,8 @@
 import {
+  restoreSocialVideoProgress,
+  type SocialVideoProgress,
+} from "./social-video-progress.js";
+import {
   isSocialPlatform,
   socialPlatforms,
   SocialOneApiProvider,
@@ -55,6 +59,7 @@ import { DouyinService } from "./douyin.js";
 import { douyinConfig } from "./douyin-provider.js";
 import { decryptToken } from "./oauth-crypto.js";
 import {
+  type VideoData,
   bucketFor,
   DataProviderError,
   DouyinDataProvider,
@@ -647,17 +652,119 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         });
       } else {
         updateCollectionContext({ phase: "videos" });
-        if (state.cursor === "0")
-          await this.db.douyinSyncState.updateMany({
-            where: { id, runId },
-            data: { processed: 0 },
+        const resumable = thirdParty && state.account.platform !== "douyin";
+        const scope = {
+          platform: state.account.platform,
+          identity: uid!,
+          revision: state.account.dataRevision,
+          day: shanghaiDate(now),
+        };
+        let progress: SocialVideoProgress | null = resumable
+          ? restoreSocialVideoProgress(state.videoProgress, scope)
+          : null;
+        const restored = !!progress;
+        if (resumable && !progress)
+          progress = { version: 1, ...scope, seenIds: [], missing: false };
+        if ((resumable && !restored) || (!resumable && state.cursor === "0"))
+          await transaction(async (tx) => {
+            await tx.douyinSyncState.updateMany({
+              where: { id, runId },
+              data: {
+                processed: 0,
+                cursor: "0",
+                ...(progress
+                  ? { videoProgress: JSON.parse(JSON.stringify(progress)) }
+                  : {}),
+              },
+            });
           });
         const limit = videoSyncLimit();
-        let total = state.cursor === "0" ? 0 : state.processed;
-        let cursor = state.cursor,
-          hasMore = total < limit,
-          missing = false;
+        let total = resumable
+          ? restored
+            ? state.processed
+            : 0
+          : state.cursor === "0"
+            ? 0
+            : state.processed;
+        let cursor = resumable && !restored ? "0" : state.cursor,
+          hasMore = total < limit && !progress?.complete,
+          missing = progress?.missing ?? false;
+        if (progress?.capturedAt) capturedAt = new Date(progress.capturedAt);
+        processed = total;
+        const persistVideos = async (
+          tx: Prisma.TransactionClient,
+          videos: VideoData[],
+        ) => {
+          const bucket = bucketFor(capturedAt);
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${state.account.organizationId + ":tags"}))`;
+          const bindings = await templateTagBindings(
+            tx,
+            state.account.organizationId,
+          );
+          for (const v of videos) {
+            const prior = await tx.platformVideo.findUnique({
+              where: {
+                accountId_remoteId: {
+                  accountId: state.accountId,
+                  remoteId: v.remoteId,
+                },
+              },
+              include: {
+                binding: true,
+                templateTagBinding: { include: { tag: true } },
+              },
+            });
+            const priorBinding = prior ? videoTagBinding(prior) : null;
+            const match =
+              priorBinding && (!priorBinding.active || priorBinding.deletedAt)
+                ? {}
+                : matchVideoTags(v.tags, bindings);
+            const video = await tx.platformVideo.upsert({
+              where: {
+                accountId_remoteId: {
+                  accountId: state.accountId,
+                  remoteId: v.remoteId,
+                },
+              },
+              create: {
+                organizationId: state.account.organizationId,
+                accountId: state.accountId,
+                remoteId: v.remoteId,
+                source: metricSource(),
+                title: v.title,
+                ...(v.coverUrl ? { coverUrl: v.coverUrl } : {}),
+                tags: v.tags,
+                publishedAt: v.publishedAt,
+                lastSeenAt: capturedAt,
+                ...match,
+              },
+              update: {
+                source: metricSource(),
+                title: v.title,
+                ...(v.coverUrl ? { coverUrl: v.coverUrl } : {}),
+                tags: v.tags,
+                publishedAt: v.publishedAt,
+                lastSeenAt: capturedAt,
+                ...match,
+              },
+            });
+            if (v.metrics)
+              await tx.videoMetricSample.upsert({
+                where: { videoId_bucket: { videoId: video.id, bucket } },
+                create: {
+                  videoId: video.id,
+                  bucket,
+                  capturedAt,
+                  ...v.metrics,
+                  source: metricSource(),
+                },
+                update: { capturedAt, ...v.metrics, source: metricSource() },
+              });
+            else missing = true;
+          }
+        };
         for (let page = 0; page < 3 && hasMore; page++) {
+          let checkpointed = false;
           const result = thirdParty
             ? await this.social.videos(
                 state.account
@@ -666,6 +773,38 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
                 uid!,
                 cursor,
                 limit - total,
+                progress
+                  ? {
+                      progress,
+                      onProgress: async (next, video) => {
+                        if (video) capturedAt = new Date();
+                        const saved: SocialVideoProgress = {
+                          ...next,
+                          missing: missing || !!(video && !video.metrics),
+                          ...(video
+                            ? { capturedAt: capturedAt.toISOString() }
+                            : progress?.capturedAt
+                              ? { capturedAt: progress.capturedAt }
+                              : {}),
+                        };
+                        // 视频和剩余列表在同一事务内保存，进程重启后无需重复查询成功的视频。
+                        await transaction(async (tx) => {
+                          if (video) await persistVideos(tx, [video]);
+                          await tx.douyinSyncState.updateMany({
+                            where: { id, runId },
+                            data: {
+                              videoProgress: JSON.parse(JSON.stringify(saved)),
+                              ...(video ? { processed: { increment: 1 } } : {}),
+                            },
+                          });
+                        });
+                        checkpointed = true;
+                        progress = saved;
+                        missing = saved.missing;
+                        if (video) processed++;
+                      },
+                    }
+                  : undefined,
               )
             : await this.source.videos(token, credential!.openId, cursor);
           // 到达上限后结束本轮，历史视频不再查询或更新指标。
@@ -675,85 +814,32 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           total += result.videos.length;
           const continuePaging = result.hasMore && total < limit;
           capturedAt = new Date();
-          const bucket = bucketFor(capturedAt);
           await transaction(async (tx) => {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${state.account.organizationId + ":tags"}))`;
-            const bindings = await templateTagBindings(
-              tx,
-              state.account.organizationId,
-            );
-            for (const v of result.videos) {
-              const prior = await tx.platformVideo.findUnique({
-                where: {
-                  accountId_remoteId: {
-                    accountId: state.accountId,
-                    remoteId: v.remoteId,
-                  },
-                },
-                include: {
-                  binding: true,
-                  templateTagBinding: { include: { tag: true } },
-                },
-              });
-              const priorBinding = prior ? videoTagBinding(prior) : null;
-              const match =
-                priorBinding && (!priorBinding.active || priorBinding.deletedAt)
-                  ? {}
-                  : matchVideoTags(v.tags, bindings);
-              const video = await tx.platformVideo.upsert({
-                where: {
-                  accountId_remoteId: {
-                    accountId: state.accountId,
-                    remoteId: v.remoteId,
-                  },
-                },
-                create: {
-                  organizationId: state.account.organizationId,
-                  accountId: state.accountId,
-                  remoteId: v.remoteId,
-                  source: metricSource(),
-                  title: v.title,
-                  ...(v.coverUrl ? { coverUrl: v.coverUrl } : {}),
-                  tags: v.tags,
-                  publishedAt: v.publishedAt,
-                  lastSeenAt: capturedAt,
-                  ...match,
-                },
-                update: {
-                  source: metricSource(),
-                  title: v.title,
-                  ...(v.coverUrl ? { coverUrl: v.coverUrl } : {}),
-                  tags: v.tags,
-                  publishedAt: v.publishedAt,
-                  lastSeenAt: capturedAt,
-                  ...match,
-                },
-              });
-              if (v.metrics)
-                await tx.videoMetricSample.upsert({
-                  where: { videoId_bucket: { videoId: video.id, bucket } },
-                  create: {
-                    videoId: video.id,
-                    bucket,
-                    capturedAt,
-                    ...v.metrics,
-                    source: metricSource(),
-                  },
-                  update: { capturedAt, ...v.metrics, source: metricSource() },
-                });
-              else missing = true;
-            }
+            if (!checkpointed) await persistVideos(tx, result.videos);
             await tx.douyinSyncState.updateMany({
               where: { id, runId },
               data: {
                 cursor: continuePaging ? result.cursor : "0",
-                processed: { increment: result.videos.length },
+                processed: total,
+                ...(progress
+                  ? {
+                      videoProgress: JSON.parse(
+                        JSON.stringify(
+                          continuePaging
+                            ? { ...progress, page: undefined }
+                            : { ...progress, complete: true },
+                        ),
+                      ),
+                    }
+                  : {}),
               },
             });
           });
           cursor = result.cursor;
           hasMore = continuePaging;
-          processed += result.videos.length;
+          if (progress && continuePaging)
+            progress = { ...progress, page: undefined };
+          processed = total;
         }
         await settle({
           status: hasMore || missing ? "partial" : "success",
@@ -763,7 +849,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
               ? "列表已同步，部分视频暂无指标；保留历史快照。"
               : "视频与指标快照已同步。",
           ...(!hasMore ? { lastSuccessAt: capturedAt } : {}),
-          ...(!hasMore ? { cursor: "0" } : {}),
+          ...(!hasMore ? { cursor: "0", videoProgress: {} } : {}),
           failures: 0,
           nextAttemptAt: hasMore
             ? new Date(Date.now() + 60000)
@@ -787,7 +873,9 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       });
       await settle({
         status: e.state,
-        ...(oneapiEnabled() ? { cursor: "0" } : {}),
+        ...(oneapiEnabled() && state.account.platform === "douyin"
+          ? { cursor: "0" }
+          : {}),
         message: e.message,
         failures: { increment: 1 },
         nextAttemptAt: oneapiEnabled()

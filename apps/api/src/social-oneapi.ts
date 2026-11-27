@@ -5,6 +5,10 @@ import {
   type VideoData,
 } from "./douyin-data-provider.js";
 import { OneApiDataProvider, profileInput, nullableCount } from "./oneapi.js";
+import type {
+  SocialVideoResume,
+  SocialVideoProgress,
+} from "./social-video-progress.js";
 export { nullableCount } from "./oneapi.js";
 export const socialPlatforms = [
   "douyin",
@@ -43,12 +47,14 @@ function unwrap(data: any) {
   // HTTP 成功不代表业务成功，优先保留平台明确返回的异常原因。
   for (const result of [data, data?.data]) {
     if (!result || typeof result !== "object") continue;
-    const failed = result.empty_reason === "bad_input" ||
+    const failed =
+      result.empty_reason === "bad_input" ||
       result.success === false ||
       (typeof result.result === "number" && result.result !== 1) ||
       (result.code != null && ![0, 200].includes(Number(result.code)));
     if (!failed) continue;
-    const message = typeof result.message === "string" ? result.message.trim() : "";
+    const message =
+      typeof result.message === "string" ? result.message.trim() : "";
     if (!message) continue;
     throw new DataProviderError(
       result.empty_reason === "bad_input" ? "invalid_input" : "platform_error",
@@ -231,7 +237,10 @@ export class SocialOneApiProvider {
       uid = validId(user.user_id);
       if (!/^\d+$/.test(uid)) throw invalid();
       nickname = user.user_name;
-      avatar = videoCoverUrl(user.headurl, ...(user.bigHeadUrls || []).map((image: any) => image.url));
+      avatar = videoCoverUrl(
+        user.headurl,
+        ...(user.bigHeadUrls || []).map((image: any) => image.url),
+      );
       fans = data.userProfile.ownerCount?.fan;
       if (!input.startsWith("https://")) {
         if (/^\d+$/.test(input)) assertOwner(uid, input);
@@ -288,12 +297,16 @@ export class SocialOneApiProvider {
     uid: string,
     cursor: string,
     limit = Infinity,
+    resume?: SocialVideoResume,
   ) {
-    if (platform === "douyin") return this.client.videos(identity, uid, cursor, limit);
+    if (platform === "douyin")
+      return this.client.videos(identity, uid, cursor, limit);
     if (cursor.length > 8192) throw invalid();
     const initial = cursor === "0" ? "" : cursor;
     let page: ReturnType<typeof listPage>;
-    if (platform === "xiaohongshu") {
+    if (resume?.progress.page?.inputCursor === cursor) {
+      page = resume.progress.page;
+    } else if (platform === "xiaohongshu") {
       const data = unwrap(
         await this.client.request(
           "fetch_user_note_list",
@@ -334,23 +347,63 @@ export class SocialOneApiProvider {
       page = listPage(data.videos, data.up_continue, data.last_buffer, initial);
     }
     const videos: VideoData[] = [];
-    const seen = new Set<string>();
+    const seen = new Set<string>(resume?.progress.seenIds || []);
     const ordered = [...page.rows].sort((a, b) => {
       const time = (row: any) => {
-        const value = Number(row.create_time ?? row.time ?? row.timestamp ?? row.photo?.timestamp ?? 0);
+        const value = Number(
+          row.create_time ??
+            row.time ??
+            row.timestamp ??
+            row.photo?.timestamp ??
+            0,
+        );
         return value > 1e12 ? value : value * 1000;
       };
       return time(b) - time(a);
     });
-    for (const row of ordered) {
+    let progress: SocialVideoProgress | undefined = resume
+      ? {
+          ...resume.progress,
+          page: {
+            inputCursor: cursor,
+            cursor: page.cursor,
+            hasMore: page.hasMore,
+            rows: ordered,
+          },
+        }
+      : undefined;
+    if (progress) await resume!.onProgress(progress);
+    for (let index = 0; index < ordered.length; index++) {
       if (videos.length >= limit) break;
+      const row = ordered[index];
+      const advance = async (video?: VideoData) => {
+        if (!progress) return;
+        const next: SocialVideoProgress = {
+          ...progress,
+          seenIds: [...seen],
+          page: {
+            inputCursor: cursor,
+            cursor: page.cursor,
+            hasMore: page.hasMore,
+            rows: ordered.slice(index + 1),
+          },
+        };
+        await resume!.onProgress(next, video);
+        progress = next;
+      };
       // 小红书图文笔记不计入视频统计，但仍使用完整列表的游标继续扫描。
-      if (platform === "xiaohongshu" && row.type !== "video") continue;
+      if (platform === "xiaohongshu" && row.type !== "video") {
+        await advance();
+        continue;
+      }
       let item = row;
       if (platform === "xiaohongshu") {
         // 列表标题未必含完整话题，视频详情用于获取完整文案和标签。
         const remoteId = validId(row.note_id ?? row.id);
-        if (seen.has(remoteId)) continue;
+        if (seen.has(remoteId)) {
+          await advance();
+          continue;
+        }
         const details = unwrap(
           await this.client.request(
             "fetch_video_note_detail",
@@ -378,8 +431,9 @@ export class SocialOneApiProvider {
       const parsed = this.parseVideo(platform, item, uid);
       if (!seen.has(parsed.remoteId)) {
         seen.add(parsed.remoteId);
+        await advance(parsed);
         videos.push(parsed);
-      }
+      } else await advance();
     }
     return { videos, hasMore: page.hasMore, cursor: page.cursor };
   }
@@ -433,14 +487,29 @@ export class SocialOneApiProvider {
     return {
       remoteId,
       title: title.slice(0, 4000),
-      coverUrl: platform === "xiaohongshu"
-        ? videoCoverUrl(row.video_info_v2?.image?.thumbnail, row.video_info_v2?.image?.first_frame, row.images_list?.[0]?.url)
-        : platform === "kuaishou"
-          ? videoCoverUrl(...(row.cover_thumbnail_urls || []).map((image: any) => image.url), ...(row.ff_cover_thumbnail_urls || []).map((image: any) => image.url))
-          : videoCoverUrl(
-              wechatVideoCoverUrl(row.media?.cover_url, row.media?.cover_url_token),
-              row.cover_img_url,
-            ),
+      coverUrl:
+        platform === "xiaohongshu"
+          ? videoCoverUrl(
+              row.video_info_v2?.image?.thumbnail,
+              row.video_info_v2?.image?.first_frame,
+              row.images_list?.[0]?.url,
+            )
+          : platform === "kuaishou"
+            ? videoCoverUrl(
+                ...(row.cover_thumbnail_urls || []).map(
+                  (image: any) => image.url,
+                ),
+                ...(row.ff_cover_thumbnail_urls || []).map(
+                  (image: any) => image.url,
+                ),
+              )
+            : videoCoverUrl(
+                wechatVideoCoverUrl(
+                  row.media?.cover_url,
+                  row.media?.cover_url_token,
+                ),
+                row.cover_img_url,
+              ),
       publishedAt: timestamp(time),
       tags: extractTags({
         title,

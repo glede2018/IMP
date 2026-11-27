@@ -40,7 +40,7 @@ test("OneAPI 每日更新时间采用北京时间并支持跨年", () => {
   ])
     assert.equal(validDataProfile(value), false);
 });
-test("OneAPI 满20条批量V2，尾页单条V2，精确字符串ID和多个话题", async () => {
+test("OneAPI 全部使用批量V2，尾页一条也批量，精确字符串ID和多个话题", async () => {
   const provider = new OneApiDataProvider();
   const paths: { path: string; body: any }[] = [];
   const rows = Array.from({ length: 20 }, (_, i) => video(i));
@@ -54,14 +54,14 @@ test("OneAPI 满20条批量V2，尾页单条V2，精确字符串ID和多个话�
       };
     if (path === "fetch_multiple_video_statistics_v2")
       return {
-        items: [...rows].reverse().map((row) => ({
-          item_id: row.aweme_id,
+        items: [...body.aweme_ids].reverse().map((remoteId: string) => ({
+          item_id: remoteId,
           exist: true,
           stats,
-          item: { id: row.aweme_id, author_id: "different-xingtu-id" },
+          item: { id: remoteId, author_id: "different-xingtu-id" },
         })),
       };
-    return { item_id: video(20).aweme_id, exist: true, stats };
+    throw new Error("不应调用单视频接口");
   };
   const first = await provider.videos(secUid, "63700340656", "0");
   assert.equal(first.hasMore, true);
@@ -74,14 +74,16 @@ test("OneAPI 满20条批量V2，尾页单条V2，精确字符串ID和多个话�
   const last = await provider.videos(secUid, "63700340656", first.cursor);
   assert.equal(last.hasMore, false);
   assert.equal(last.cursor, "0");
-  assert.equal(paths.at(-1)!.path, "fetch_video_statistics_v2");
+  assert.equal(paths.at(-1)!.path, "fetch_multiple_video_statistics_v2");
+  assert.deepEqual(paths.at(-1)!.body.aweme_ids, [video(20).aweme_id]);
+  assert.equal(last.videos[0].metrics?.views, 142165407n);
 });
 test("OneAPI 缺失统计不写零、重复游标和其他账号视频拒绝采集", async () => {
   const provider = new OneApiDataProvider();
   provider.request = async (path) =>
     path === "fetch_user_video_list"
       ? { aweme_list: [video(0)], has_more: 0 }
-      : { item_id: video(0).aweme_id, exist: false };
+      : { items: [{ item_id: video(0).aweme_id, exist: false }] };
   assert.equal(
     (await provider.videos(secUid, "63700340656", "0")).videos[0].metrics,
     null,
@@ -94,6 +96,33 @@ test("OneAPI 缺失统计不写零、重复游标和其他账号视频拒绝采�
   await assert.rejects(provider.videos(secUid, "63700340656", "0"), /不完整/);
   provider.request = async () => ({ aweme_list: [video(0)], has_more: 0 });
   await assert.rejects(provider.videos(secUid, "another-user", "0"), /不一致/);
+});
+test("一至二十条视频只调用批量接口，失败不回退单条，空列表不发请求", async () => {
+  const provider = new OneApiDataProvider();
+  const calls: { path: string; ids: string[] }[] = [];
+  provider.request = async (path, body: any) => {
+    calls.push({ path, ids: body.aweme_ids });
+    assert.equal(path, "fetch_multiple_video_statistics_v2");
+    return { items: body.aweme_ids.map((item_id: string) => ({ item_id, stats })) };
+  };
+  for (const count of [1, 2, 6, 19, 20]) {
+    const ids = Array.from({ length: count }, (_, i) => video(i).aweme_id);
+    const before = calls.length;
+    assert.equal((await provider.statistics(ids)).length, count);
+    assert.equal(calls.length, before + 1);
+    assert.deepEqual(calls.at(-1)!.ids, ids);
+  }
+  const before = calls.length;
+  await assert.rejects(provider.statistics([]));
+  await assert.rejects(provider.statistics(Array.from({ length: 21 }, (_, i) => video(i).aweme_id)));
+  assert.equal(calls.length, before);
+  const failedPaths: string[] = [];
+  provider.request = async path => {
+    failedPaths.push(path);
+    throw new Error("模拟批量请求失败");
+  };
+  await assert.rejects(provider.statistics([video(0).aweme_id]), /模拟批量请求失败/);
+  assert.deepEqual(failedPaths, ["fetch_multiple_video_statistics_v2"]);
 });
 test("抖音头像跳过 HEIC 并读取其他尺寸的兼容地址", async () => {
   const provider = new OneApiDataProvider();
@@ -120,16 +149,16 @@ test("抖音缺失粉丝数或单项视频统计时保留空值，不丢弃其�
   assert.equal(profile.avatar, "https://img.example/avatar.jpeg");
   p.request = async (path) => path === "fetch_user_video_list"
     ? { aweme_list: [video(0)], has_more: 0 }
-    : { item_id: video(0).aweme_id, stats: {
+    : { items: [{ item_id: video(0).aweme_id, stats: {
       watch_cnt: null, like_cnt: "12", comment_cnt: "0", share_cnt: "invalid", favorite_cnt: "5",
-    } };
+    } }] };
   const page = await p.videos(secUid, "63700340656", "0");
   assert.deepEqual(page.videos[0].metrics, {
     views: null, likes: 12n, comments: 0n, shares: null, collects: 5n,
   });
   p.request = async (path) => path === "fetch_user_video_list"
     ? { aweme_list: [video(0)], has_more: 0 }
-    : { item_id: video(0).aweme_id, stats: {} };
+    : { items: [{ item_id: video(0).aweme_id, stats: {} }] };
   assert.equal((await p.videos(secUid, "63700340656", "0")).videos[0].metrics, null);
 });
 test("OneAPI 用户粉丝优先抖音总数，网络错误和密钥不进入错误信息", async () => {
@@ -193,8 +222,8 @@ test("OneAPI 额外置顶作品去重后按20条拆批，不丢失尾部作品",
   };
   const result = await provider.videos(secUid, "63700340656", "0");
   assert.equal(result.videos.length, 22);
-  assert.equal(batch, 1);
-  assert.equal(single, 2);
+  assert.equal(batch, 2);
+  assert.equal(single, 0);
   assert.ok(result.videos.every((v) => v.metrics?.views === 142165407n));
 });
 
@@ -275,15 +304,17 @@ test("OneAPI 每次超时30秒，失败重试两次；成功立即结束，最�
     };
     await new OneApiDataProvider().request("fetch_user_data", {});
     assert.equal(calls, 1);
-    for (const [state, response] of [
-      ["platform_error", () => new Response("private-retry-key", { status: 503 })],
-      ["quota_exhausted", () => new Response(JSON.stringify({ code: 301, data: null }))],
+    for (const [state, response, attempts] of [
+      ["platform_error", () => new Response("private-retry-key", { status: 503 }), 3],
+      ["quota_exhausted", () => new Response(JSON.stringify({ code: 301, data: null })), 1],
+      ["permission_required", () => new Response("private-retry-key", { status: 401 }), 1],
+      ["permission_required", () => new Response(JSON.stringify({ code: 403, data: null })), 1],
     ] as const) {
       calls = 0;
       globalThis.fetch = async () => { calls++; return response(); };
       await assert.rejects(new OneApiDataProvider().request("fetch_user_data", {}), (error: any) =>
-        error.state === state && error.message.includes("已重试 2 次") && !error.message.includes("private-retry-key"));
-      assert.equal(calls, 3);
+        error.state === state && error.message.includes("已重试 2 次") === (attempts === 3) && !error.message.includes("private-retry-key"));
+      assert.equal(calls, attempts);
     }
     calls = 0;
     globalThis.fetch = async () => { calls++; throw new DOMException("private-retry-key", "TimeoutError"); };

@@ -15,9 +15,7 @@ export const metricSource = () => (oneapiEnabled() ? "oneapi_v2" : "official");
 
 // 临时失败在当天补偿，不推迟下一轮北京时间零点的正常采集。
 export function nextOneApiRetry(failures: number, now = new Date()) {
-  const minutes = [1, 2, 3, 5][
-    Math.min(3, Math.max(0, Math.floor(failures)))
-  ];
+  const minutes = [1, 2, 3, 5][Math.min(3, Math.max(0, Math.floor(failures)))];
   return new Date(
     Math.min(now.getTime() + minutes * 60000, nextDailySync(now).getTime()),
   );
@@ -263,7 +261,10 @@ export class OneApiDataProvider {
         const timeout =
           signal.aborted ||
           (error instanceof Error && error.name === "TimeoutError");
-        collectionLog(attempt < 2 ? "warn" : "error", "oneapi.request.failed", {
+        const willRetry =
+          attempt < 2 &&
+          (!(error instanceof DataProviderError) || error.retryable);
+        collectionLog(willRetry ? "warn" : "error", "oneapi.request.failed", {
           ...attemptInfo,
           requestPhase,
           httpStatus,
@@ -271,16 +272,16 @@ export class OneApiDataProvider {
           timeout,
           durationMs: Date.now() - attemptStartedAt,
           totalDurationMs: Date.now() - startedAt,
-          willRetry: attempt < 2,
+          willRetry,
           state:
             error instanceof DataProviderError ? error.state : "network_error",
           ...collectionErrorDetails(error),
         });
-        if (attempt < 2) continue;
+        if (willRetry) continue;
         if (error instanceof DataProviderError)
           throw new DataProviderError(
             error.state,
-            `${error.message}（已重试 2 次）`,
+            `${error.message}${attempt ? `（已重试 ${attempt} 次）` : ""}`,
             error.retryable,
           );
         throw new DataProviderError(
@@ -334,22 +335,11 @@ export class OneApiDataProvider {
   }
   async statistics(ids: string[]) {
     if (!ids.length || ids.length > 20) throw invalid();
-    // 批量不足二十条仍按二十条收费，尾页逐条调用，所有请求统一使用 V2 总播放量。
-    if (ids.length < 20) {
-      const rows = [];
-      for (const aweme_id of ids)
-        rows.push(
-          await this.request("fetch_video_statistics_v2", {
-            aweme_id,
-            share_text: "",
-          }),
-        );
-      return rows;
-    }
+    // 一至二十条均调用批量接口，尾批不再拆成多个单视频请求。
     const data = await this.request("fetch_multiple_video_statistics_v2", {
       aweme_ids: ids,
     });
-    // 批量接口直接返回视频对象，单条接口使用 item_id / item 包装；两种格式分别校验。
+    // 兼容批量接口的数组、列表包装及按视频 ID 索引的返回格式。
     if (
       data.base_resp?.status_code != null &&
       Number(data.base_resp.status_code) !== 0
