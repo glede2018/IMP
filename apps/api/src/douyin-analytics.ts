@@ -1,3 +1,4 @@
+import { videoCoverUrl } from "./video-cover.js";
 import {
   restoreSocialVideoProgress,
   type SocialVideoProgress,
@@ -85,9 +86,14 @@ function permission(req: AuthRequest, key: string) {
     throw new ForbiddenException("没有此操作权限");
 }
 export function dateRange(query: { start?: string; end?: string }) {
-  const end = query.end || shanghaiDate(new Date());
+  // 默认查询截至昨天的七天，避免将尚未完成采集的当天计入统计。
+  const end = query.end || shanghaiDate(new Date(Date.now() - 86400000));
+  const endTime = new Date(`${end}T00:00:00+08:00`).getTime();
   const start =
-    query.start || shanghaiDate(new Date(Date.now() - 6 * 86400000));
+    query.start ||
+    (Number.isFinite(endTime)
+      ? shanghaiDate(new Date(endTime - 6 * 86400000))
+      : end);
   const first = new Date(`${start}T00:00:00+08:00`),
     last = new Date(`${end}T00:00:00+08:00`);
   if (
@@ -1083,7 +1089,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           id: v.id,
           remoteId: v.remoteId,
           title: v.title,
-          coverUrl: v.coverUrl,
+          coverUrl: videoCoverUrl(v.coverUrl),
           accountId: v.accountId,
           publishedAt: v.publishedAt,
           tags: v.tags,
@@ -1218,7 +1224,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         SELECT c."templateId", c.revision, COUNT(w.id)::int AS count
         FROM "Work" w JOIN "VideoCreationDraft" c ON c.id=w."creationId"
         WHERE w."organizationId"=${org} AND c."organizationId"=${org}
-          AND w."createdAt" >= ${range.first} AND w."createdAt" < ${range.last}
+          AND w."createdAt" >= ${range.first.toISOString()}::timestamp AND w."createdAt" < ${range.last.toISOString()}::timestamp
         GROUP BY c."templateId", c.revision
       `)
         : null,

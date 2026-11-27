@@ -19,6 +19,8 @@ import {
   Typography,
 } from "antd";
 import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+dayjs.extend(utc);
 import { useSearchParams } from "react-router-dom";
 import {
   fetchLiveOverview,
@@ -58,10 +60,13 @@ export default function LiveAnalytics() {
   const active = tabs.some((t) => t.key === params.get("tab"))
     ? params.get("tab")!
     : "content";
-  const [period, setPeriod] = useState<[string, string]>([
-    dayjs().subtract(6, "day").format("YYYY-MM-DD"),
-    dayjs().format("YYYY-MM-DD"),
-  ]);
+  const [period, setPeriod] = useState<[string, string]>(() => {
+    const yesterday = dayjs().utcOffset(480).subtract(1, "day");
+    return [
+      yesterday.subtract(6, "day").format("YYYY-MM-DD"),
+      yesterday.format("YYYY-MM-DD"),
+    ];
+  });
   const [platform, setPlatform] = useState("all");
   const [accountId, setAccountId] = useState("all");
   const [type, setType] = useState("all");

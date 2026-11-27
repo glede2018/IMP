@@ -343,7 +343,14 @@ test("OneAPI 同步扫码授权账号：权限和组织隔离、零点计划、�
         .views,
       100,
     );
-    const overview = await service.overview(org.id, {});
+    const todayText = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+    // 历史封面不重新采集也应在返回时转换成浏览器兼容格式。
+    await db.platformVideo.update({ where: { id: video.id }, data: {
+      coverUrl: "https://sns-i14-ae.rednotecdn.com/frame/a.webp?imageView2/2/format/heif&sign=test",
+    } });
+    const overview = await service.overview(org.id, { start: todayText, end: todayText });
+    assert.equal(overview.videos.find(v => v.id === video.id)?.coverUrl,
+      "https://sns-i14-ae.rednotecdn.com/frame/a.webp?imageView2/2/format/jpg&sign=test");
     assert.equal(overview.content.generated, 0);
     assert.equal(overview.content.publishedWorks, null);
     assert.ok(overview.content.trend.length > 0);

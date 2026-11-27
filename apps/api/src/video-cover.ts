@@ -9,6 +9,12 @@ export function videoCoverUrl(...candidates: unknown[]): string | null {
       if (/\.heic$/i.test(url.pathname)) continue;
       if (url.protocol === "http:" && /(^|\.)kwimgs\.com$/i.test(url.hostname))
         url.protocol = "https:";
+      // 小红书封面扩展名可能是 WebP，处理参数却指定 HEIF；保留其他参数并改为浏览器兼容的 JPEG。
+      if (/(^|\.)(rednotecdn|xhscdn)\.com$/i.test(url.hostname))
+        url.search = url.search.replace(
+          /((?:\/|%2F)format(?:\/|%2F))(heif|heic)(?=\/|%2F|&|$)/gi,
+          "$1jpg",
+        );
       if (url.protocol === "https:") return url.href;
     } catch {
       // 无效封面不影响视频指标采集。
@@ -18,7 +24,10 @@ export function videoCoverUrl(...candidates: unknown[]): string | null {
 }
 
 // 视频号 CDN 将访问令牌单独返回，缺少令牌时封面会返回 HTTP 400。
-export function wechatVideoCoverUrl(value: unknown, token: unknown): string | null {
+export function wechatVideoCoverUrl(
+  value: unknown,
+  token: unknown,
+): string | null {
   const base = videoCoverUrl(value);
   if (!base || typeof token !== "string" || !token) return base;
   const params = new URLSearchParams(token.replace(/^[?&]/, ""));
