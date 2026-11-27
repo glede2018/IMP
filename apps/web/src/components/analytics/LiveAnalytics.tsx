@@ -1,3 +1,7 @@
+import InteractionMetric, {
+  interactionRate,
+  interactionLabels,
+} from "./InteractionMetric";
 import { platformMap } from "@/services/api";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -258,13 +262,41 @@ export default function LiveAnalytics() {
                 },
                 ...Object.entries(labels).map(([key, label]) => ({
                   key,
-                  label,
-                  children: text(video.metrics[key as keyof LiveMetrics]),
+                  label:
+                    key === "views"
+                      ? label
+                      : `期间${interactionLabels[key as keyof typeof interactionLabels]}`,
+                  children:
+                    key === "views" ? (
+                      text(video.metrics.views)
+                    ) : (
+                      <InteractionMetric
+                        count={video.metrics[key as keyof LiveMetrics]}
+                        rate={interactionRate(
+                          video.metrics[key as keyof LiveMetrics],
+                          video.metrics.views,
+                        )}
+                      />
+                    ),
                 })),
                 ...Object.entries(labels).map(([key, label]) => ({
                   key: `latest-${key}`,
-                  label: label.replace("期间", "累计"),
-                  children: text(video.latest?.[key as keyof LiveMetrics]),
+                  label:
+                    key === "views"
+                      ? label.replace("期间", "累计")
+                      : `累计${interactionLabels[key as keyof typeof interactionLabels]}`,
+                  children:
+                    key === "views" ? (
+                      text(video.latest?.views)
+                    ) : (
+                      <InteractionMetric
+                        count={video.latest?.[key as keyof LiveMetrics]}
+                        rate={interactionRate(
+                          video.latest?.[key as keyof LiveMetrics],
+                          video.latest?.views,
+                        )}
+                      />
+                    ),
                 })),
               ]}
             />

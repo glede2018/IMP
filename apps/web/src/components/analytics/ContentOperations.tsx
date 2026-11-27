@@ -1,9 +1,10 @@
+import InteractionMetric, {
+  interactionKeys,
+  interactionLabels,
+} from "./InteractionMetric";
 import VideoCoverButton from "./VideoCoverButton";
 import { Button, Card, Col, Empty, List, Row } from "antd";
-import {
-  ArrowDownOutlined,
-  ArrowUpOutlined,
-} from "@ant-design/icons";
+import { ArrowDownOutlined, ArrowUpOutlined } from "@ant-design/icons";
 import {
   Bar,
   BarChart,
@@ -27,10 +28,6 @@ const compact = (v: number | null | undefined) =>
     : Math.abs(v) >= 10000
       ? `${(v / 10000).toFixed(1).replace(/\.0$/, "")}万`
       : number(v);
-const sum = (...values: (number | null | undefined)[]) =>
-  values.some((v) => v == null)
-    ? null
-    : values.reduce<number>((a, b) => a + b!, 0);
 const rate = (a: number | null | undefined, b: number | null | undefined) =>
   a == null || b == null || !b ? "—" : `${((a / b) * 100).toFixed(1)}%`;
 function Comparison({
@@ -79,7 +76,11 @@ function Ranking({
         <List.Item>
           <div className="dc-content-rank-row">
             {row.video ? (
-              <VideoCoverButton video={row.video} className="dc-content-play" onClick={() => onSelect(row)} />
+              <VideoCoverButton
+                video={row.video}
+                className="dc-content-play"
+                onClick={() => onSelect(row)}
+              />
             ) : (
               <span className="dc-rank">
                 {String(index + 1).padStart(2, "0")}
@@ -123,7 +124,7 @@ export default function ContentOperations({
   const trend = (content?.trend || []).map((r) => ({
     ...r,
     label: dayjs(r.date).format("MM.DD"),
-    value: r.views == null ? null : r.views / 10000,
+    value: r.views,
   }));
   const ranked = <T extends { metrics: { views: number | null } }>(rows: T[]) =>
     rows
@@ -169,20 +170,28 @@ export default function ContentOperations({
             ),
           },
           {
-            title: "点赞 · 评论 · 分享",
-            value: compact(
-              sum(summary?.likes, summary?.comments, summary?.shares),
+            title: interactionLabels.likes,
+            value: (
+              <InteractionMetric
+                compact
+                count={summary?.likes}
+                rate={summary?.rates.likes}
+              />
             ),
             details: (
-              <>
-                <div className="dc-content-split">
-                  <span>赞 {compact(summary?.likes)}</span>
-                  <span>评 {number(summary?.comments)}</span>
-                </div>
-                <div className="dc-content-split">
-                  <span>分享 {number(summary?.shares)}</span>
-                </div>
-              </>
+              <div style={{ display: "grid", gap: 4 }}>
+                {interactionKeys
+                  .filter((key) => key !== "likes")
+                  .map((key) => (
+                    <span key={key}>
+                      {interactionLabels[key]}{" "}
+                      <InteractionMetric
+                        count={summary?.[key]}
+                        rate={summary?.rates[key]}
+                      />
+                    </span>
+                  ))}
+              </div>
             ),
           },
           {
@@ -249,7 +258,7 @@ export default function ContentOperations({
         <Col xs={24} xl={12}>
           <Panel
             title="内容传播趋势"
-            extra={<span className="dc-content-muted">新增播放 / 万次</span>}
+            extra={<span className="dc-content-muted">新增播放 / 次</span>}
           >
             <div className="dc-content-chart">
               <ResponsiveContainer width="100%" height="100%">
@@ -266,14 +275,14 @@ export default function ContentOperations({
                   />
                   <YAxis
                     hide
-                    domain={[0, (max: number) => Math.max(1, max * 1.25)]}
+                    domain={[
+                      (min: number) => Math.min(0, min * 1.25),
+                      (max: number) => Math.max(1, max * 1.25),
+                    ]}
                   />
                   <Tooltip
                     cursor={{ fill: "#faf7f3" }}
-                    formatter={(v: number) => [
-                      `${number(v * 10000)} 次`,
-                      "新增播放",
-                    ]}
+                    formatter={(v: number) => [`${number(v)} 次`, "新增播放"]}
                   />
                   <Bar dataKey="value" radius={[5, 5, 0, 0]} maxBarSize={44}>
                     {trend.map((r, i) => (
@@ -286,7 +295,7 @@ export default function ContentOperations({
                       dataKey="value"
                       position="top"
                       formatter={(v: number | null) =>
-                        v == null ? "" : v.toFixed(1)
+                        v == null ? "" : compact(v)
                       }
                       fill="#948e86"
                     />

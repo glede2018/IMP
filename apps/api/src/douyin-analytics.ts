@@ -4,7 +4,12 @@ import {
   SocialOneApiProvider,
   type SocialProfile,
 } from "./social-oneapi.js";
-import { metricSource, nextDailySync, oneapiEnabled, videoSyncLimit } from "./oneapi.js";
+import {
+  metricSource,
+  nextDailySync,
+  oneapiEnabled,
+  videoSyncLimit,
+} from "./oneapi.js";
 import {
   templateTagBindings,
   matchVideoTags,
@@ -31,6 +36,7 @@ import { IsIn, IsOptional, IsString, Length, Matches } from "class-validator";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { Database } from "./database.js";
+import { summarizeVideoMetrics, sumKnown } from "./analytics-summary.js";
 import {
   accountWindowMetrics,
   videoWindowMetrics,
@@ -834,7 +840,13 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       .map((v) => {
         const binding = videoTagBinding(v);
         const window = videoStats.get(v.id);
-        const fields = ["views", "likes", "comments", "shares", "collects"] as const;
+        const fields = [
+          "views",
+          "likes",
+          "comments",
+          "shares",
+          "collects",
+        ] as const;
         const metrics = Object.fromEntries(
           fields.map((key) => [
             key,
@@ -894,16 +906,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         byTemplate.set(video.template.id, templateRows);
       }
     }
-    const sum = (values: (number | null)[]) =>
-      !values.length || values.some((v) => v === null)
-        ? null
-        : values.reduce<number>((a, v) => a + v!, 0);
-    const metrics = (rows: typeof videos) => ({
-      views: sum(rows.map((v) => v.metrics.views)),
-      likes: sum(rows.map((v) => v.metrics.likes)),
-      comments: sum(rows.map((v) => v.metrics.comments)),
-      shares: sum(rows.map((v) => v.metrics.shares)),
-    });
+    const summary = summarizeVideoMetrics(videos);
     const accountRows = accounts.map((a) => {
       const window = fanStats.get(a.id);
       const own = byAccount.get(a.id) || [];
@@ -914,7 +917,7 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
         type: a.tier,
         store: a.store?.name || null,
         published: own.filter((v) => v.publishedAt >= range.first).length,
-        metrics: metrics(own),
+        ...summarizeVideoMetrics(own),
         fans: window?.fans == null ? null : Number(window.fans),
         fansCapturedAt: window?.capturedAt || null,
         netFans: window?.netFans == null ? null : Number(window.netFans),
@@ -1015,12 +1018,12 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           published: previousVideos.filter(
             (v) => v.publishedAt >= previousRange.first,
           ).length,
-          views: sum(
+          views: sumKnown(
             [...previousVideoStats.values()].map((v) =>
               v.views == null ? null : Number(v.views),
             ),
           ),
-          netFans: sum(
+          netFans: sumKnown(
             [...previousFanStats.values()].map((a) =>
               a.netFans == null ? null : Number(a.netFans),
             ),
@@ -1034,11 +1037,13 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       accounts: accountRows,
       videos,
       summary: {
-        ...metrics(videos),
+        ...summary.metrics,
+        rates: summary.rates,
+        metricCoverage: summary.metricCoverage,
         published: videos.filter((v) => v.publishedAt >= range.first).length,
         participating: accountRows.filter((a) => a.published > 0).length,
-        fans: sum(accountRows.map((a) => a.fans)),
-        netFans: sum(accountRows.map((a) => a.netFans)),
+        fans: sumKnown(accountRows.map((a) => a.fans)),
+        netFans: sumKnown(accountRows.map((a) => a.netFans)),
         videoCount: videos.length,
         measuredVideos: videos.filter((v) => v.metrics.views !== null).length,
         unmatched: videos.filter((v) => v.matchStatus === "unmatched").length,
@@ -1046,7 +1051,8 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
       },
       templates: bindings.map((b) => {
         const own = byTemplate.get(b.id) || [];
-        const m = metrics(own);
+        const stats = summarizeVideoMetrics(own);
+        const m = stats.metrics;
         return {
           id: b.id,
           templateId: b.templateId,
@@ -1059,10 +1065,10 @@ export class DouyinAnalyticsService implements OnModuleInit, OnModuleDestroy {
           published: own.filter((v) => v.publishedAt >= range.first).length,
           videoCount: own.length,
           accounts: new Set(own.map((v) => v.accountId)).size,
-          metrics: m,
+          ...stats,
           average:
-            own.length && m.views !== null
-              ? Math.round(m.views / own.length)
+            stats.metricCoverage.views && m.views !== null
+              ? Math.round(m.views / stats.metricCoverage.views)
               : null,
         };
       }),

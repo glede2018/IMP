@@ -457,6 +457,24 @@
   font-size: 12px;
   margin-top: 4px;
 }
+.dc-video-details-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dc-video-details-table .dc-performance-video-title.ant-btn {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1;
+}
+.dc-video-details-table .dc-performance-video-title.ant-btn > span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.dc-video-details-table .ant-table-cell {
+  overflow-wrap: anywhere;
+}
 .dc-performance-placeholder {
   min-height: 110px;
   display: grid;

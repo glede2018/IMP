@@ -6,6 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import {
   videoWindowMetrics,
   accountWindowMetrics,
+  videoDailyViews,
 } from "../dist/douyin-metrics.js";
 
 test("边界统计保留缺失基线、负增量、新视频累计值和租户隔离", async () => {
@@ -119,6 +120,34 @@ test("边界统计保留缺失基线、负增量、新视频累计值和租户�
     assert.equal(stats.get(videos[2].id)!.views, null);
     assert.equal(stats.get(videos[3].id)!.views, null);
     assert.equal(stats.get(videos[4].id)!.capturedAt, null);
+    const daily = await videoDailyViews(
+      db as any,
+      org.id,
+      videos.map((v) => v.id),
+      {
+        first: range.first,
+        last: new Date("2026-11-04T00:00:00Z"),
+      },
+    );
+    // 新视频 50 与旧视频修正 -10 正常计入，缺失基线的视频不抹掉已知增量。
+    assert.equal(daily[0].views, 40);
+    assert.equal(daily[2].views, null);
+    assert.equal(
+      (await videoDailyViews(db as any, org.id, [videos[2].id], range))[0]
+        .views,
+      null,
+    );
+    assert.equal(
+      (
+        await videoDailyViews(
+          db as any,
+          other.id,
+          videos.map((v) => v.id),
+          range,
+        )
+      )[0].views,
+      null,
+    );
     assert.equal(
       (
         await videoWindowMetrics(

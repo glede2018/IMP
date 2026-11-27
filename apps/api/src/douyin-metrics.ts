@@ -1,6 +1,7 @@
 import { metricSource } from "./oneapi.js";
 import { Prisma } from "@prisma/client";
 import type { Database } from "./database.js";
+import { shanghaiDate } from "./douyin-data-provider.js";
 
 const fields = ["views", "likes", "comments", "shares", "collects"] as const;
 type Metric = (typeof fields)[number];
@@ -84,7 +85,7 @@ export async function accountWindowMetrics(
   return new Map(rows.map((row) => [row.accountId, row]));
 }
 
-// 按北京时间逐日读取快照边界，缺少历史基线的日期保留空值。
+// 按北京时间逐日读取快照边界，只汇总可计算的增量，全部缺失时保留空值。
 export async function videoDailyViews(
   db: Database,
   org: string,
@@ -99,12 +100,12 @@ export async function videoDailyViews(
   )
     days.push(new Date(time));
   if (!ids.length)
-    return days.map((date) => ({ date: date.toISOString(), views: null }));
+    return days.map((date) => ({ date: shanghaiDate(date), views: null }));
   const rows = await db.$queryRaw<
     { date: Date; views: bigint | null }[]
   >(Prisma.sql`
     SELECT d.day AS date,
-      CASE WHEN COUNT(*) = COUNT(m.views) THEN SUM(m.views) ELSE NULL END AS views
+      SUM(m.views) AS views
     FROM generate_series(${range.first}::timestamptz, ${range.last}::timestamptz - INTERVAL '1 day', INTERVAL '1 day') d(day)
     LEFT JOIN LATERAL (
       SELECT CASE WHEN l."capturedAt" >= d.day
@@ -127,7 +128,7 @@ export async function videoDailyViews(
     GROUP BY d.day ORDER BY d.day
   `);
   return rows.map((r) => ({
-    date: r.date.toISOString(),
+    date: shanghaiDate(r.date),
     views: r.views == null ? null : Number(r.views),
   }));
 }

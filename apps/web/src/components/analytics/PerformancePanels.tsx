@@ -1,3 +1,8 @@
+import InteractionMetric, {
+  interactionKeys,
+  interactionLabels,
+  interactionRate,
+} from "./InteractionMetric";
 import { platformMap } from "@/services/api";
 import { useState } from "react";
 import {
@@ -28,6 +33,12 @@ const compact = (v: number | null | undefined) =>
       : text(v);
 const signed = (v: number | null | undefined) =>
   v == null ? "—" : `${v > 0 ? "+" : ""}${text(v)}`;
+function metricValue(
+  metrics: LiveOverview["accounts"][number]["metrics"],
+  key: keyof typeof metrics,
+) {
+  return key === "views" ? compact(metrics[key]) : text(metrics[key]);
+}
 const empty = (
   <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />
 );
@@ -42,7 +53,7 @@ const pagination = {
 export function MetricCards({
   items,
 }: {
-  items: { title: string; value: string; detail?: ReactNode }[];
+  items: { title: string; value: ReactNode; detail?: ReactNode }[];
 }) {
   return (
     <Row gutter={[16, 16]}>
@@ -69,18 +80,23 @@ function VideoTable({
     <Table<LiveVideo>
       rowKey="id"
       dataSource={videos}
-      scroll={{ x: 950 }}
+      className="dc-video-details-table"
+      tableLayout="fixed"
       pagination={pagination}
       locale={{ emptyText: empty }}
       columns={[
         {
           title: "视频 / 模板",
           key: "video",
-          width: 360,
+          width: "28%",
           render: (_, v) => (
             <div>
-              <Space align="center">
-                <VideoCoverButton video={v} className="dc-performance-play" onClick={() => onVideo(v)} />
+              <div className="dc-video-details-title">
+                <VideoCoverButton
+                  video={v}
+                  className="dc-performance-play"
+                  onClick={() => onVideo(v)}
+                />
                 <Button
                   type="text"
                   className="dc-performance-video-title"
@@ -88,7 +104,7 @@ function VideoTable({
                 >
                   {v.title || "未命名视频"}
                 </Button>
-              </Space>
+              </div>
               <div className="dc-content-muted dc-video-template">
                 {v.template ? v.template.title : "—"}
               </div>
@@ -98,27 +114,28 @@ function VideoTable({
         {
           title: "发布时间",
           dataIndex: "publishedAt",
-          width: 150,
+          width: "12%",
           render: (v: string) => dayjs(v).format("MM.DD HH:mm"),
         },
         {
           title: "播放量",
           key: "views",
+          width: "8%",
           align: "right",
           render: (_, v) => compact(v.latest?.views),
         },
-        {
-          title: "收藏数",
-          key: "collects",
-          align: "right",
-          render: (_, v) => text(v.latest?.collects),
-        },
-        ...(["likes", "comments", "shares"] as const).map((key, i) => ({
-          title: ["点赞数", "评论数", "分享数"][i],
+        ...interactionKeys.map((key) => ({
+          title: interactionLabels[key],
           key,
+          width: "13%",
           align: "right" as const,
-          render: (_: unknown, v: LiveVideo) =>
-            text(v.latest?.[key]),
+          render: (_: unknown, v: LiveVideo) => (
+            <InteractionMetric
+              wrap
+              count={v.latest?.[key]}
+              rate={interactionRate(v.latest?.[key], v.latest?.views)}
+            />
+          ),
         })),
       ]}
     />
@@ -156,9 +173,29 @@ export function AccountPerformance({
           },
           { title: "期间新增播放", value: compact(summary?.views) },
           {
-            title: "点赞数",
-            value: compact(summary?.likes),
-            detail: `评论 ${text(summary?.comments)} · 分享 ${text(summary?.shares)}`,
+            title: interactionLabels.likes,
+            value: (
+              <InteractionMetric
+                compact
+                count={summary?.likes}
+                rate={summary?.rates.likes}
+              />
+            ),
+            detail: (
+              <Space wrap size={[12, 4]}>
+                {interactionKeys
+                  .filter((key) => key !== "likes")
+                  .map((key) => (
+                    <span key={key}>
+                      {interactionLabels[key]}{" "}
+                      <InteractionMetric
+                        count={summary?.[key]}
+                        rate={summary?.rates[key]}
+                      />
+                    </span>
+                  ))}
+              </Space>
+            ),
           },
           {
             title: "净增粉丝",
@@ -174,7 +211,7 @@ export function AccountPerformance({
         <Table<LiveOverview["accounts"][number]>
           rowKey="id"
           dataSource={rows}
-          scroll={{ x: 950 }}
+          scroll={{ x: 1150 }}
           pagination={pagination}
           locale={{ emptyText: empty }}
           columns={[
@@ -208,17 +245,21 @@ export function AccountPerformance({
               ),
             },
             { title: "发布数", dataIndex: "published", align: "right" },
-            ...(["views", "likes", "comments", "shares"] as const).map(
-              (key, i) => ({
-                title: ["播放量", "点赞", "评论", "分享"][i],
-                key,
-                align: "right" as const,
-                render: (_: unknown, a: LiveOverview["accounts"][number]) =>
-                  key === "views"
-                    ? compact(a.metrics[key])
-                    : text(a.metrics[key]),
-              }),
-            ),
+            {
+              title: "播放量",
+              key: "views",
+              align: "right",
+              render: (_, a) => metricValue(a.metrics, "views"),
+            },
+            ...interactionKeys.map((key) => ({
+              title: interactionLabels[key],
+              key,
+              align: "right" as const,
+              width: 155,
+              render: (_: unknown, a: LiveOverview["accounts"][number]) => (
+                <InteractionMetric count={a.metrics[key]} rate={a.rates[key]} />
+              ),
+            })),
             {
               title: "净增粉丝",
               dataIndex: "netFans",
@@ -227,21 +268,22 @@ export function AccountPerformance({
             },
           ]}
         />
-
       </Panel>
       <Modal
         title={`${account?.name || "账号"} · 视频明细`}
         open={!!account}
         onCancel={() => onSelect(null)}
         footer={null}
-        width={1100}
+        width={1440}
         className="dc-performance-page"
         styles={{ body: { maxHeight: "65dvh", overflowY: "auto" } }}
         destroyOnClose
       >
         <VideoTable
           key={account?.id}
-          videos={(data?.videos || []).filter((v) => v.accountId === account?.id)}
+          videos={(data?.videos || []).filter(
+            (v) => v.accountId === account?.id,
+          )}
           onVideo={onVideo}
         />
       </Modal>
@@ -266,7 +308,14 @@ export function TemplatePerformance({
       : (b.average ?? -Infinity) - (a.average ?? -Infinity),
   );
   const template = rows.find((t) => t.id === selected);
-  const summary = data?.summary;
+  const measuredVideos = rows.reduce(
+    (sum, row) => sum + row.metricCoverage.views,
+    0,
+  );
+  const views = measuredVideos
+    ? rows.reduce((sum, row) => sum + (row.metrics.views ?? 0), 0)
+    : null;
+  const published = rows.reduce((sum, row) => sum + row.published, 0);
   return (
     <div className="dc-performance-stack">
       <MetricCards
@@ -288,17 +337,17 @@ export function TemplatePerformance({
           },
           {
             title: "发布视频",
-            value: text(summary?.published),
+            value: text(data ? published : null),
             detail: "按平台发布记录去重",
           },
           {
             title: "单视频平均播放",
             value: text(
-              summary?.views != null && summary.measuredVideos > 0
-                ? Math.round(summary.views / summary.measuredVideos)
+              views != null && measuredVideos > 0
+                ? Math.round(views / measuredVideos)
                 : null,
             ),
-            detail: `${compact(summary?.views)}播放 / ${text(summary?.videoCount)}条视频`,
+            detail: `${compact(views)}播放 / ${text(data ? measuredVideos : null)}条视频`,
           },
         ]}
       />
@@ -318,7 +367,7 @@ export function TemplatePerformance({
         <Table<LiveOverview["templates"][number]>
           rowKey="id"
           dataSource={rows}
-          scroll={{ x: 1050 }}
+          scroll={{ x: 1450 }}
           pagination={pagination}
           locale={{ emptyText: empty }}
           columns={[
@@ -350,7 +399,7 @@ export function TemplatePerformance({
               title: "总播放",
               key: "views",
               align: "right",
-              render: (_, t) => compact(t.metrics.views),
+              render: (_, t) => metricValue(t.metrics, "views"),
             },
             {
               title: "平均播放",
@@ -358,41 +407,33 @@ export function TemplatePerformance({
               align: "right",
               render: text,
             },
-            {
-              title: "点赞数",
-              key: "likes",
-              align: "right",
-              render: (_, t) => text(t.metrics.likes),
-            },
-            {
-              title: "评论数",
-              key: "comments",
-              align: "right",
-              render: (_, t) => text(t.metrics.comments),
-            },
-            {
-              title: "分享数",
-              key: "shares",
-              align: "right",
-              render: (_, t) => text(t.metrics.shares),
-            },
+            ...interactionKeys.map((key) => ({
+              title: interactionLabels[key],
+              key,
+              align: "right" as const,
+              width: 155,
+              render: (_: unknown, t: LiveOverview["templates"][number]) => (
+                <InteractionMetric count={t.metrics[key]} rate={t.rates[key]} />
+              ),
+            })),
           ]}
         />
-
       </Panel>
       <Modal
         title={`${template?.title || "模板"} · 视频明细`}
         open={!!template}
         onCancel={() => onSelect(null)}
         footer={null}
-        width={1100}
+        width={1440}
         className="dc-performance-page"
         styles={{ body: { maxHeight: "65dvh", overflowY: "auto" } }}
         destroyOnClose
       >
         <VideoTable
           key={template?.id}
-          videos={(data?.videos || []).filter((v) => v.template?.id === template?.id)}
+          videos={(data?.videos || []).filter(
+            (v) => v.template?.id === template?.id,
+          )}
           onVideo={onVideo}
         />
       </Modal>

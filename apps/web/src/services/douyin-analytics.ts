@@ -6,6 +6,11 @@ export type LiveMetrics = {
   comments: number | null;
   shares: number | null;
 };
+export type MetricCoverage = Record<keyof LiveMetrics | "total", number>;
+export type InteractionRates = Record<
+  "likes" | "comments" | "shares" | "collects",
+  number | null
+>;
 export type SyncAccount = {
   id: string;
   name: string;
@@ -65,6 +70,8 @@ export type LiveOverview = {
   basis: string;
   syncedAt: string | null;
   summary: LiveMetrics & {
+    rates: InteractionRates;
+    metricCoverage: MetricCoverage;
     published: number;
     participating: number;
     fans: number | null;
@@ -82,12 +89,16 @@ export type LiveOverview = {
     store: string | null;
     published: number;
     metrics: LiveMetrics;
+    metricCoverage: MetricCoverage;
+    rates: InteractionRates;
+    rateCoverage: Record<keyof InteractionRates, number>;
     fans: number | null;
     fansCapturedAt: string | null;
     netFans: number | null;
   }[];
   videos: LiveVideo[];
   templates: {
+    rates: InteractionRates;
     id: string;
     templateId: string;
     title: string;
@@ -98,6 +109,7 @@ export type LiveOverview = {
     works: number | null;
     accounts: number;
     metrics: LiveMetrics;
+    metricCoverage: MetricCoverage;
     average: number | null;
   }[];
   trading: { status: string; message: string };
